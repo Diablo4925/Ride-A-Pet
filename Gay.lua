@@ -281,7 +281,7 @@ local function saveVisitedServer(id)
         local visited = getVisitedServers()
         visited[id] = tick()
         for k, v in pairs(visited) do
-            if tick() - v > 1800 then
+            if tick() - v > 2400 then
                 visited[k] = nil
             end
         end
@@ -289,39 +289,82 @@ local function saveVisitedServer(id)
     end)
 end
 
-local function fetchServerList(cursor)
-    local endpoints = {
-        string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100%s", tostring(game.PlaceId), (cursor ~= "" and "&cursor=" .. cursor or "")),
-        string.format("https://games.roproxy.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100%s", tostring(game.PlaceId), (cursor ~= "" and "&cursor=" .. cursor or ""))
+local function getFriendServerBlacklist()
+    local friendServers = {}
+    pcall(function()
+        local friends = LocalPlayer:GetFriendsOnline(50)
+        if friends and type(friends) == "table" then
+            for _, f in ipairs(friends) do
+                if f.PlaceId == game.PlaceId and f.GameId then
+                    friendServers[f.GameId] = true
+                end
+            end
+        end
+    end)
+    return friendServers
+end
+
+local function fetchRandomStrangerServer()
+    local currentJob = game.JobId
+    local placeId = game.PlaceId
+    local visited = getVisitedServers()
+    local friendServers = getFriendServerBlacklist()
+
+    local urls = {
+        "https://games.roproxy.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100",
+        "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100",
+        "https://games.roproxy.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=100"
     }
 
-    for _, url in ipairs(endpoints) do
-        local body = nil
-        if httpRequest then
-            local success, res = pcall(function()
-                return httpRequest({Url = url, Method = "GET"})
-            end)
-            if success and res and res.Body then
-                body = res.Body
-            end
-        end
+    for _, baseUrl in ipairs(urls) do
+        local cursor = ""
+        for page = 1, 3 do
+            local fetchUrl = baseUrl .. (cursor ~= "" and "&cursor=" .. cursor or "")
+            local body = nil
 
-        if not body then
-            local success, res = pcall(function()
-                return game:HttpGet(url)
-            end)
-            if success and res then
-                body = res
+            if httpRequest then
+                local s, res = pcall(function()
+                    return httpRequest({Url = fetchUrl, Method = "GET"})
+                end)
+                if s and res and (res.StatusCode == 200 or res.Status == 200) and res.Body then
+                    body = res.Body
+                end
             end
-        end
 
-        if body then
-            local success, data = pcall(function()
-                return HttpService:JSONDecode(body)
-            end)
-            if success and data and data.data then
-                return data
+            if not body then
+                local s, res = pcall(function()
+                    return game:HttpGet(fetchUrl)
+                end)
+                if s and res and string.find(res, "data") then
+                    body = res
+                end
             end
+
+            if body then
+                local s, data = pcall(function()
+                    return HttpService:JSONDecode(body)
+                end)
+                if s and data and data.data then
+                    local strangerPool = {}
+                    for _, server in ipairs(data.data) do
+                        if type(server) == "table" and server.id and server.id ~= currentJob and not visited[server.id] and not friendServers[server.id] then
+                            local playing = tonumber(server.playing) or 0
+                            local maxPlayers = tonumber(server.maxPlayers) or 0
+                            if maxPlayers > 0 and (maxPlayers - playing >= 1) and playing >= 1 then
+                                table.insert(strangerPool, server.id)
+                            end
+                        end
+                    end
+                    if #strangerPool > 0 then
+                        return strangerPool[math.random(1, #strangerPool)]
+                    end
+                    cursor = data.nextPageCursor or ""
+                    if cursor == "" then break end
+                else
+                    break
+                end
+            end
+            task.wait(0.2)
         end
     end
     return nil
@@ -337,45 +380,30 @@ local function hopServer()
         end)
     end
 
-    local currentJob = game.JobId
-    saveVisitedServer(currentJob)
-    local visited = getVisitedServers()
+    Fluent:Notify({ Title = "Server Hop", Content = "Searching for servers without friends...", Duration = 3 })
 
-    local cursor = ""
-    local viableServers = {}
+    local targetServer = fetchRandomStrangerServer()
 
-    for page = 1, 6 do
-        local data = fetchServerList(cursor)
-        if data and data.data then
-            for _, s in ipairs(data.data) do
-                if type(s) == "table" and s.id ~= currentJob and not visited[s.id] and s.playing and s.maxPlayers then
-                    if (s.maxPlayers - s.playing >= 1) and (s.playing >= 1) then
-                        table.insert(viableServers, s.id)
-                    end
-                end
-            end
-
-            if #viableServers >= 6 or not data.nextPageCursor then
-                break
-            else
-                cursor = data.nextPageCursor
-            end
-        else
-            break
-        end
-        task.wait(0.25)
-    end
-
-    if #viableServers > 0 then
-        local picked = viableServers[math.random(1, #viableServers)]
-        saveVisitedServer(picked)
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, picked, LocalPlayer)
+    if targetServer then
+        saveVisitedServer(targetServer)
+        Fluent:Notify({ Title = "Server Hop", Content = "Found server! Hopping to " .. string.sub(targetServer, 1, 8) .. "...", Duration = 3 })
+        task.wait(0.5)
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, targetServer, LocalPlayer)
     else
         pcall(function()
             if writefile then writefile(VISITED_SERVERS_FILE, "{}") end
         end)
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        Fluent:Notify({ Title = "Server Hop", Content = "Refreshing server pool, retrying...", Duration = 2.5 })
+        task.wait(1.5)
+        local retryServer = fetchRandomStrangerServer()
+        if retryServer then
+            saveVisitedServer(retryServer)
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, retryServer, LocalPlayer)
+        end
     end
+
+    task.wait(4)
+    isHopping = false
 end
 
 local function fastVoidDrop()
@@ -720,7 +748,7 @@ Tabs.Eggs:AddButton({
 
 Tabs.Server:AddParagraph({
     Title = "Automation & Server Hop",
-    Content = "Smart Server Hop searches multiple pages & avoids recent servers."
+    Content = "Smart Server Hop avoids friends and recent servers completely."
 })
 
 local HopToggle = Tabs.Server:AddToggle("AutoHopToggle", {
@@ -750,9 +778,8 @@ end)
 
 Tabs.Server:AddButton({
     Title = "Server Hop Now",
-    Description = "Instantly switch to another active public server",
+    Description = "Instantly switch to another server without friends",
     Callback = function()
-        Fluent:Notify({ Title = "Server Hop", Content = "Searching for a new server...", Duration = 2 })
         hopServer()
     end
 })
