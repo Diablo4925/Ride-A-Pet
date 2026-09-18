@@ -36,6 +36,7 @@ end
 cleanupOldWidgets()
 
 local queueTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
+local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 local AUTO_EXEC_CODE = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Diablo4925/Ride-A-Pet/refs/heads/main/Gay.lua"))()'
 local CONFIG_FILE = "RideUrMoM_Config.json"
 local VISITED_SERVERS_FILE = "RideUrMoM_Visited.json"
@@ -288,6 +289,44 @@ local function saveVisitedServer(id)
     end)
 end
 
+local function fetchServerList(cursor)
+    local endpoints = {
+        string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100%s", tostring(game.PlaceId), (cursor ~= "" and "&cursor=" .. cursor or "")),
+        string.format("https://games.roproxy.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100%s", tostring(game.PlaceId), (cursor ~= "" and "&cursor=" .. cursor or ""))
+    }
+
+    for _, url in ipairs(endpoints) do
+        local body = nil
+        if httpRequest then
+            local success, res = pcall(function()
+                return httpRequest({Url = url, Method = "GET"})
+            end)
+            if success and res and res.Body then
+                body = res.Body
+            end
+        end
+
+        if not body then
+            local success, res = pcall(function()
+                return game:HttpGet(url)
+            end)
+            if success and res then
+                body = res
+            end
+        end
+
+        if body then
+            local success, data = pcall(function()
+                return HttpService:JSONDecode(body)
+            end)
+            if success and data and data.data then
+                return data
+            end
+        end
+    end
+    return nil
+end
+
 local function hopServer()
     if isHopping then return end
     isHopping = true
@@ -305,36 +344,26 @@ local function hopServer()
     local cursor = ""
     local viableServers = {}
 
-    for page = 1, 4 do
-        local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100%s", tostring(game.PlaceId), (cursor ~= "" and "&cursor=" .. cursor or ""))
-        local success, res = pcall(function()
-            return game:HttpGet(url)
-        end)
-
-        if success and res then
-            local data = nil
-            pcall(function() data = HttpService:JSONDecode(res) end)
-            if data and data.data then
-                for _, s in ipairs(data.data) do
-                    if type(s) == "table" and s.id ~= currentJob and not visited[s.id] and s.playing and s.maxPlayers then
-                        if (s.maxPlayers - s.playing >= 2) and (s.playing >= 1) then
-                            table.insert(viableServers, s.id)
-                        end
+    for page = 1, 6 do
+        local data = fetchServerList(cursor)
+        if data and data.data then
+            for _, s in ipairs(data.data) do
+                if type(s) == "table" and s.id ~= currentJob and not visited[s.id] and s.playing and s.maxPlayers then
+                    if (s.maxPlayers - s.playing >= 1) and (s.playing >= 1) then
+                        table.insert(viableServers, s.id)
                     end
                 end
+            end
 
-                if #viableServers >= 5 or not data.nextPageCursor then
-                    break
-                else
-                    cursor = data.nextPageCursor
-                end
-            else
+            if #viableServers >= 6 or not data.nextPageCursor then
                 break
+            else
+                cursor = data.nextPageCursor
             end
         else
             break
         end
-        task.wait(0.2)
+        task.wait(0.25)
     end
 
     if #viableServers > 0 then
