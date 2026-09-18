@@ -5,8 +5,31 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
+
+local queueTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
+local AUTO_EXEC_CODE = 'loadstring(game:HttpGet("https://cdn.jsdelivr.net/gh/Diablo4925/Ride-A-Pet@main/Gay.lua"))()'
+local CONFIG_FILE = "RideUrMoM_Config.json"
+
+local AutoExecEnabled = true
+local AutoHopEnabled = false
+local AutoFarmActive = false
+local EspActive = true
+local HopDelay = 5
+local scanFailTime = 0
+local isHopping = false
+
+local function armAutoExecute()
+    if AutoExecEnabled and queueTeleport then
+        pcall(function()
+            queueTeleport(AUTO_EXEC_CODE)
+        end)
+    end
+end
+armAutoExecute()
 
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
@@ -19,8 +42,6 @@ local DROP_TIME = 0.2
 local WARP_WAIT = 0.85
 local PICKUP_DURATION = 3.0
 
-local AutoFarmActive = false
-local EspActive = true
 local currentTween = nil
 local trackedBillboards = {}
 
@@ -84,6 +105,38 @@ local SelectedEggs = {
     ["Devil Fruit Egg"] = true,
     ["Admin Egg"] = true
 }
+
+local function saveConfig()
+    if not writefile then return end
+    pcall(function()
+        local data = {
+            AutoFarm = AutoFarmActive,
+            AutoHop = AutoHopEnabled,
+            AutoExec = AutoExecEnabled,
+            Esp = EspActive,
+            Selected = SelectedEggs
+        }
+        writefile(CONFIG_FILE, HttpService:JSONEncode(data))
+    end)
+end
+
+local function loadConfig()
+    if not readfile or not isfile or not isfile(CONFIG_FILE) then return end
+    pcall(function()
+        local content = readfile(CONFIG_FILE)
+        local data = HttpService:JSONDecode(content)
+        if data then
+            if data.AutoFarm ~= nil then AutoFarmActive = data.AutoFarm end
+            if data.AutoHop ~= nil then AutoHopEnabled = data.AutoHop end
+            if data.AutoExec ~= nil then AutoExecEnabled = data.AutoExec end
+            if data.Esp ~= nil then EspActive = data.Esp end
+            if data.Selected and type(data.Selected) == "table" then
+                SelectedEggs = data.Selected
+            end
+        end
+    end)
+end
+loadConfig()
 
 local initialDisplayDefault = {}
 for realName, val in pairs(SelectedEggs) do
@@ -155,6 +208,39 @@ local function getCandidateEggs()
         end
     end
     return list
+end
+
+local function hopServer()
+    if isHopping then return end
+    isHopping = true
+    armAutoExecute()
+
+    local placeId = game.PlaceId
+    local currentJobId = game.JobId
+
+    local success, res = pcall(function()
+        local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100", tostring(placeId))
+        return game:HttpGet(url)
+    end)
+
+    if success and res then
+        local data = HttpService:JSONDecode(res)
+        if data and data.data then
+            local viableServers = {}
+            for _, server in ipairs(data.data) do
+                if type(server) == "table" and server.id ~= currentJobId and server.playing and server.maxPlayers and (server.maxPlayers - server.playing >= 2) then
+                    table.insert(viableServers, server.id)
+                end
+            end
+            if #viableServers > 0 then
+                local chosenId = viableServers[math.random(1, #viableServers)]
+                TeleportService:TeleportToPlaceInstance(placeId, chosenId, LocalPlayer)
+                return
+            end
+        end
+    end
+
+    TeleportService:Teleport(placeId, LocalPlayer)
 end
 
 local function fastVoidDrop()
@@ -332,23 +418,34 @@ task.spawn(function()
                     end
 
                     if bestEgg and bestPart and bestEgg.Parent then
+                        scanFailTime = 0
                         hrp.CFrame = CFrame.new(bestPart.Position + Vector3.new(0, 1.5, 0))
                         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 
                         spamEggPickup(bestEgg, bestPart, PICKUP_DURATION)
                         fastVoidDrop()
+                    else
+                        if AutoHopEnabled and not isHopping then
+                            if scanFailTime == 0 then
+                                scanFailTime = tick()
+                            elseif tick() - scanFailTime >= HopDelay then
+                                hopServer()
+                            end
+                        end
                     end
                 end
             end)
+        else
+            scanFailTime = 0
         end
         task.wait(0.4)
     end
 end)
 
 local Window = Fluent:CreateWindow({
-    Title = "Aether Suite",
-    SubTitle = "Ride A Pet • Fluent Edition",
+    Title = "Ride Ur MoM",
+    SubTitle = "By. Diablo",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Acrylic = true,
@@ -359,17 +456,18 @@ local Window = Fluent:CreateWindow({
 local Tabs = {
     Main = Window:AddTab({ Title = "Auto Farm", Icon = "play" }),
     Eggs = Window:AddTab({ Title = "Target Eggs", Icon = "egg" }),
+    Server = Window:AddTab({ Title = "Server & Config", Icon = "globe" }),
     Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" })
 }
 
 Tabs.Main:AddParagraph({
-    Title = "Void Warp Harvester",
-    Content = "Instant void fall return (-650 Y). Noclip, Anti-Ragdoll, and Anti-AFK are active."
+    Title = "Ride Ur MoM • Harvester",
+    Content = "Instant void fall return (-650 Y). Noclip, Anti-Ragdoll, Anti-AFK & Auto-Save active."
 })
 
 local FarmToggle = Tabs.Main:AddToggle("AutoFarmToggle", {
     Title = "Enable Auto Farm",
-    Default = false
+    Default = AutoFarmActive
 })
 
 FarmToggle:OnChanged(function()
@@ -378,8 +476,9 @@ FarmToggle:OnChanged(function()
         currentTween:Cancel()
         currentTween = nil
     end
+    saveConfig()
     Fluent:Notify({
-        Title = "Harvester Engine",
+        Title = "Ride Ur MoM",
         Content = AutoFarmActive and "Auto Farm Started!" or "Auto Farm Stopped.",
         Duration = 2.5
     })
@@ -408,6 +507,7 @@ local function syncSelectionFromDropdown(val)
         end
     end
     SelectedEggs = updated
+    saveConfig()
 end
 
 EggDropdown:OnChanged(function(Value)
@@ -467,17 +567,68 @@ Tabs.Eggs:AddButton({
     end
 })
 
+Tabs.Server:AddParagraph({
+    Title = "Automation & Server Hop",
+    Content = "Auto Hop switches servers when no target eggs remain. Auto Execute re-injects script on teleport."
+})
+
+local HopToggle = Tabs.Server:AddToggle("AutoHopToggle", {
+    Title = "Auto Hop Server (When No Eggs Found)",
+    Default = AutoHopEnabled
+})
+
+HopToggle:OnChanged(function()
+    AutoHopEnabled = Fluent.Options.AutoHopToggle.Value
+    saveConfig()
+    Fluent:Notify({
+        Title = "Server Hop",
+        Content = AutoHopEnabled and "Auto Hop Enabled" or "Auto Hop Disabled",
+        Duration = 2
+    })
+end)
+
+local ExecToggle = Tabs.Server:AddToggle("AutoExecToggle", {
+    Title = "Auto Execute On Teleport/Hop",
+    Default = AutoExecEnabled
+})
+
+ExecToggle:OnChanged(function()
+    AutoExecEnabled = Fluent.Options.AutoExecToggle.Value
+    armAutoExecute()
+    saveConfig()
+end)
+
+Tabs.Server:AddButton({
+    Title = "Server Hop Now",
+    Description = "Instantly switch to another active public server",
+    Callback = function()
+        Fluent:Notify({ Title = "Server Hop", Content = "Finding a server...", Duration = 2 })
+        hopServer()
+    end
+})
+
+Tabs.Server:AddButton({
+    Title = "Rejoin Current Server",
+    Callback = function()
+        armAutoExecute()
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end
+})
+
 local EspToggle = Tabs.Visuals:AddToggle("EspToggle", {
     Title = "Live Egg Billboard ESP",
-    Default = true
+    Default = EspActive
 })
 
 EspToggle:OnChanged(function()
     EspActive = Fluent.Options.EspToggle.Value
     if not EspActive then
-        for _, bb in pairs(trackedBillboards) do if bb then bb:Destroy() end end
+        for _, bb in pairs(trackedBillboards) do
+            if bb then bb:Destroy() end
+        end
         trackedBillboards = {}
     end
+    saveConfig()
 end)
 
 local targetGuiParent = (gethui and gethui()) or CoreGui:FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
@@ -549,7 +700,7 @@ WidgetBtn.MouseButton1Click:Connect(function()
 end)
 
 Fluent:Notify({
-    Title = "Aether Loaded",
-    Content = "Ready",
+    Title = "Ride Ur MoM",
+    Content = "By. Diablo • Ready",
     Duration = 3
 })
