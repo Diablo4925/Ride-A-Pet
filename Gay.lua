@@ -11,7 +11,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local queueTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
-local AUTO_EXEC_CODE = 'loadstring(game:HttpGet("https://cdn.jsdelivr.net/gh/Diablo4925/Ride-A-Pet@main/Gay.lua"))()'
+local AUTO_EXEC_CODE = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Diablo4925/Ride-A-Pet/refs/heads/main/Gay.lua"))()'
 local CONFIG_FILE = "RideUrMoM_Config.json"
 
 local AutoExecEnabled = true
