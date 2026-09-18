@@ -430,6 +430,10 @@ local function hopServer()
         if retryServer then
             saveVisitedServer(retryServer)
             TeleportService:TeleportToPlaceInstance(game.PlaceId, retryServer, LocalPlayer)
+        else
+            Fluent:Notify({ Title = "Server Hop", Content = "API failed, hopping to random server...", Duration = 2.5 })
+            task.wait(0.5)
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
         end
     end
 
