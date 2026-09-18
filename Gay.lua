@@ -177,17 +177,48 @@ for realName, val in pairs(SelectedEggs) do
     end
 end
 
-LocalPlayer.Idled:Connect(function()
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new(0, 0))
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local function secureAntiAFK()
+    pcall(function()
+        local idledConns = getconnections and getconnections(LocalPlayer.Idled)
+        if idledConns then
+            for _, conn in pairs(idledConns) do
+                if conn.Disable then
+                    conn:Disable()
+                elseif conn.Disconnect then
+                    conn:Disconnect()
+                end
+            end
+        end
+    end)
+    pcall(function()
+        local ps = LocalPlayer:FindFirstChild("PlayerScripts")
+        local reusable = ps and ps:FindFirstChild("Reusable")
+        local afkScript = reusable and reusable:FindFirstChild("TeleportBackOnAFK")
+        if afkScript then
+            afkScript.Disabled = true
+        end
+    end)
+end
+
+secureAntiAFK()
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    secureAntiAFK()
 end)
 
 task.spawn(function()
     while _G.RideUrMoM_Running and _G.RideUrMoM_Session == currentScriptSession do
-        task.wait(300)
+        task.wait(60)
+        secureAntiAFK()
         pcall(function()
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new(0, 0))
+            if VirtualInputManager then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.RightControl, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
+            end
         end)
     end
 end)
