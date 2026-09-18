@@ -43,6 +43,7 @@ local VOID_FALL_HEIGHT = -650
 local DROP_TIME = 0.2
 local WARP_WAIT = 0.85
 local PICKUP_DURATION = 3.0
+local HOLD_EGG_DELAY = 1.5
 
 local currentTween = nil
 local trackedBillboards = {}
@@ -205,6 +206,25 @@ end
 local function getBestPart(obj)
     if obj:IsA("BasePart") then return obj end
     return obj:FindFirstChild("EggBase") or obj:FindFirstChild("Handle") or obj:FindFirstChildWhichIsA("BasePart")
+end
+
+local function getEggSize(obj)
+    local scaleAttr = obj:GetAttribute("Scale") or obj:GetAttribute("Size") or obj:GetAttribute("EggScale")
+    if type(scaleAttr) == "number" then return scaleAttr end
+    if typeof(scaleAttr) == "Vector3" then return scaleAttr.Magnitude end
+
+    if obj:IsA("Model") then
+        local cf, size = obj:GetBoundingBox()
+        return size.X * size.Y * size.Z
+    elseif obj:IsA("BasePart") then
+        return obj.Size.X * obj.Size.Y * obj.Size.Z
+    end
+
+    local best = getBestPart(obj)
+    if best then
+        return best.Size.X * best.Size.Y * best.Size.Z
+    end
+    return 1
 end
 
 local function getCandidateEggs()
@@ -407,6 +427,7 @@ task.spawn(function()
                     local candidates = getCandidateEggs()
                     local bestEgg, bestPart = nil, nil
                     local highestLuck = -1
+                    local biggestSize = -1
                     local shortestDist = 99999
 
                     for _, obj in ipairs(candidates) do
@@ -415,13 +436,24 @@ task.spawn(function()
                             local p = getBestPart(obj)
                             if p and p.Parent and isWildEgg(p) then
                                 local dist = (hrp.Position - p.Position).Magnitude
+                                local currentSize = getEggSize(obj)
 
+                                local isBetter = false
                                 if info.Luck > highestLuck then
+                                    isBetter = true
+                                elseif info.Luck == highestLuck then
+                                    if currentSize > (biggestSize * 1.05) then
+                                        isBetter = true
+                                    elseif math.abs(currentSize - biggestSize) <= (biggestSize * 0.05) then
+                                        if dist < shortestDist then
+                                            isBetter = true
+                                        end
+                                    end
+                                end
+
+                                if isBetter then
                                     highestLuck = info.Luck
-                                    shortestDist = dist
-                                    bestEgg = obj
-                                    bestPart = p
-                                elseif info.Luck == highestLuck and dist < shortestDist then
+                                    biggestSize = currentSize
                                     shortestDist = dist
                                     bestEgg = obj
                                     bestPart = p
@@ -437,6 +469,9 @@ task.spawn(function()
                         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 
                         spamEggPickup(bestEgg, bestPart, PICKUP_DURATION)
+
+                        task.wait(HOLD_EGG_DELAY)
+
                         fastVoidDrop()
                     else
                         if AutoHopEnabled and not isHopping then
