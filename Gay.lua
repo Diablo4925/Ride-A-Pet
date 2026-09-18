@@ -21,6 +21,8 @@ local EspActive = true
 local HopDelay = 5
 local scanFailTime = 0
 local isHopping = false
+local currentFpsCap = 60
+local is3dDisabled = false
 
 local function armAutoExecute()
     if AutoExecEnabled and queueTeleport then
@@ -114,6 +116,8 @@ local function saveConfig()
             AutoHop = AutoHopEnabled,
             AutoExec = AutoExecEnabled,
             Esp = EspActive,
+            Fps = currentFpsCap,
+            Disable3D = is3dDisabled,
             Selected = SelectedEggs
         }
         writefile(CONFIG_FILE, HttpService:JSONEncode(data))
@@ -130,6 +134,8 @@ local function loadConfig()
             if data.AutoHop ~= nil then AutoHopEnabled = data.AutoHop end
             if data.AutoExec ~= nil then AutoExecEnabled = data.AutoExec end
             if data.Esp ~= nil then EspActive = data.Esp end
+            if data.Fps ~= nil then currentFpsCap = data.Fps end
+            if data.Disable3D ~= nil then is3dDisabled = data.Disable3D end
             if data.Selected and type(data.Selected) == "table" then
                 SelectedEggs = data.Selected
             end
@@ -137,6 +143,13 @@ local function loadConfig()
     end)
 end
 loadConfig()
+
+if setfpscap and currentFpsCap then
+    pcall(setfpscap, currentFpsCap)
+end
+if is3dDisabled and RunService.Set3dRenderingEnabled then
+    pcall(RunService.Set3dRenderingEnabled, RunService, false)
+end
 
 local initialDisplayDefault = {}
 for realName, val in pairs(SelectedEggs) do
@@ -456,8 +469,9 @@ local Window = Fluent:CreateWindow({
 local Tabs = {
     Main = Window:AddTab({ Title = "Auto Farm", Icon = "play" }),
     Eggs = Window:AddTab({ Title = "Target Eggs", Icon = "egg" }),
-    Server = Window:AddTab({ Title = "Server & Config", Icon = "globe" }),
-    Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" })
+    Server = Window:AddTab({ Title = "Server & Hop", Icon = "globe" }),
+    Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
 Tabs.Main:AddParagraph({
@@ -629,6 +643,47 @@ EspToggle:OnChanged(function()
         trackedBillboards = {}
     end
     saveConfig()
+end)
+
+Tabs.Settings:AddParagraph({
+    Title = "Performance & Optimization",
+    Content = "Limit FPS and disable 3D world rendering to lower CPU/GPU usage while AFK."
+})
+
+local FpsSlider = Tabs.Settings:AddSlider("FpsSlider", {
+    Title = "Cap FPS",
+    Description = "Set target FPS (15-30 recommended for overnight AFK)",
+    Default = currentFpsCap,
+    Min = 15,
+    Max = 240,
+    Rounding = 0
+})
+
+FpsSlider:OnChanged(function(Value)
+    currentFpsCap = Value
+    if setfpscap then
+        pcall(setfpscap, Value)
+    end
+    saveConfig()
+end)
+
+local Render3dToggle = Tabs.Settings:AddToggle("Render3dToggle", {
+    Title = "Disable 3D Rendering (Black Screen)",
+    Description = "Turn off 3D world render to save maximum GPU/battery",
+    Default = is3dDisabled
+})
+
+Render3dToggle:OnChanged(function()
+    is3dDisabled = Fluent.Options.Render3dToggle.Value
+    if RunService.Set3dRenderingEnabled then
+        pcall(RunService.Set3dRenderingEnabled, RunService, not is3dDisabled)
+    end
+    saveConfig()
+    Fluent:Notify({
+        Title = "Performance",
+        Content = is3dDisabled and "3D Rendering Disabled" or "3D Rendering Enabled",
+        Duration = 2
+    })
 end)
 
 local targetGuiParent = (gethui and gethui()) or CoreGui:FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
