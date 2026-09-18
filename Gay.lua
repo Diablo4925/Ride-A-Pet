@@ -40,6 +40,7 @@ local httpRequest = (syn and syn.request) or (http and http.request) or http_req
 local AUTO_EXEC_CODE = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Diablo4925/Ride-A-Pet/refs/heads/main/Gay.lua"))()'
 local CONFIG_FILE = "RideUrMoM_Config.json"
 local VISITED_SERVERS_FILE = "RideUrMoM_Visited.json"
+local SERVER_POOL_FILE = "RideUrMoM_ServerPool.json"
 
 local AutoExecEnabled = true
 local AutoHopEnabled = false
@@ -249,13 +250,36 @@ RunService.Stepped:Connect(function()
 end)
 
 local function isWildEgg(obj)
-    local isUnderPlot = obj:FindFirstAncestor("Plots") or obj:FindFirstAncestor("Plot") or obj:FindFirstAncestor("Nests") or obj:FindFirstAncestor("EggBaskets")
-    return not isUnderPlot
+    if not obj or not obj.Parent then return false end
+    if obj:FindFirstAncestor("Plots") or obj:FindFirstAncestor("Plot") or obj:FindFirstAncestor("Nests") or obj:FindFirstAncestor("EggBaskets") then
+        return false
+    end
+    if obj:FindFirstAncestorOfClass("Player") or obj:FindFirstAncestorOfClass("Backpack") then
+        return false
+    end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character and obj:IsDescendantOf(player.Character) then
+            return false
+        end
+    end
+    local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if not prompt or not prompt.Enabled then
+        return false
+    end
+    return true
 end
 
 local function getBestPart(obj)
+    local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt and prompt.Parent then
+        if prompt.Parent:IsA("BasePart") then
+            return prompt.Parent
+        elseif prompt.Parent:IsA("Attachment") and prompt.Parent.Parent and prompt.Parent.Parent:IsA("BasePart") then
+            return prompt.Parent.Parent
+        end
+    end
     if obj:IsA("BasePart") then return obj end
-    return obj:FindFirstChild("EggBase") or obj:FindFirstChild("Handle") or obj:FindFirstChildWhichIsA("BasePart")
+    return obj:FindFirstChild("Handle") or obj:FindFirstChild("EggBase") or obj:FindFirstChildWhichIsA("BasePart")
 end
 
 local function getEggSize(obj)
@@ -282,12 +306,9 @@ local function getCandidateEggs()
     local rendered = Workspace:FindFirstChild("RenderedEggs")
     if rendered then
         for _, obj in ipairs(rendered:GetChildren()) do
-            table.insert(list, obj)
-        end
-    end
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj.Name:match("Egg") and not obj:FindFirstAncestor("Plots") then
-            table.insert(list, obj)
+            if isWildEgg(obj) then
+                table.insert(list, obj)
+            end
         end
     end
     return list
@@ -320,85 +341,132 @@ local function saveVisitedServer(id)
     end)
 end
 
-local function getFriendServerBlacklist()
-    local friendServers = {}
+local cachedFriendServers = {}
+
+local function refreshFriendCache()
     pcall(function()
-        local friends = LocalPlayer:GetFriendsOnline(50)
+        local friends = LocalPlayer:GetFriendsOnline(200)
+        local newCache = {}
         if friends and type(friends) == "table" then
             for _, f in ipairs(friends) do
                 if f.PlaceId == game.PlaceId and f.GameId then
-                    friendServers[f.GameId] = true
+                    newCache[f.GameId] = true
                 end
             end
         end
+        cachedFriendServers = newCache
     end)
-    return friendServers
 end
 
-local function fetchRandomStrangerServer()
-    local currentJob = game.JobId
-    local placeId = game.PlaceId
+task.spawn(function()
+    refreshFriendCache()
+    while _G.RideUrMoM_Running and _G.RideUrMoM_Session == currentScriptSession do
+        task.wait(120)
+        refreshFriendCache()
+    end
+end)
+
+local function getStoredServerPool()
+    local pool = {}
+    if readfile and isfile and isfile(SERVER_POOL_FILE) then
+        pcall(function()
+            local decoded = HttpService:JSONDecode(readfile(SERVER_POOL_FILE))
+            if type(decoded) == "table" then
+                pool = decoded
+            end
+        end)
+    end
+    return pool
+end
+
+local function saveStoredServerPool(pool)
+    if not writefile then return end
+    pcall(function()
+        writefile(SERVER_POOL_FILE, HttpService:JSONEncode(pool))
+    end)
+end
+
+local function getAvailableServerFromPool()
+    local pool = getStoredServerPool()
     local visited = getVisitedServers()
-    local friendServers = getFriendServerBlacklist()
+    local currentJob = game.JobId
+    local candidates = {}
 
-    local urls = {
-        "https://games.roproxy.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100",
-        "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100",
-        "https://games.roproxy.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=100"
-    }
-
-    for _, baseUrl in ipairs(urls) do
-        local cursor = ""
-        for page = 1, 3 do
-            local fetchUrl = baseUrl .. (cursor ~= "" and "&cursor=" .. cursor or "")
-            local body = nil
-
-            if httpRequest then
-                local s, res = pcall(function()
-                    return httpRequest({Url = fetchUrl, Method = "GET"})
-                end)
-                if s and res and (res.StatusCode == 200 or res.Status == 200) and res.Body then
-                    body = res.Body
-                end
-            end
-
-            if not body then
-                local s, res = pcall(function()
-                    return game:HttpGet(fetchUrl)
-                end)
-                if s and res and string.find(res, "data") then
-                    body = res
-                end
-            end
-
-            if body then
-                local s, data = pcall(function()
-                    return HttpService:JSONDecode(body)
-                end)
-                if s and data and data.data then
-                    local strangerPool = {}
-                    for _, server in ipairs(data.data) do
-                        if type(server) == "table" and server.id and server.id ~= currentJob and not visited[server.id] and not friendServers[server.id] then
-                            local playing = tonumber(server.playing) or 0
-                            local maxPlayers = tonumber(server.maxPlayers) or 0
-                            if maxPlayers > 0 and (maxPlayers - playing >= 1) and playing >= 1 then
-                                table.insert(strangerPool, server.id)
-                            end
-                        end
-                    end
-                    if #strangerPool > 0 then
-                        return strangerPool[math.random(1, #strangerPool)]
-                    end
-                    cursor = data.nextPageCursor or ""
-                    if cursor == "" then break end
-                else
-                    break
-                end
-            end
-            task.wait(0.2)
+    for _, id in ipairs(pool) do
+        if type(id) == "string" and id ~= currentJob and not visited[id] and not cachedFriendServers[id] then
+            table.insert(candidates, id)
         end
     end
+
+    if #candidates > 0 then
+        return candidates[math.random(1, #candidates)]
+    end
     return nil
+end
+
+local function fetchServersBatch()
+    local placeId = game.PlaceId
+    local currentJob = game.JobId
+    local newPool = {}
+
+    local endpoints = {
+        "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=100",
+        "https://games.roproxy.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=100",
+        "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100",
+        "https://games.roproxy.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100"
+    }
+
+    for _, baseUrl in ipairs(endpoints) do
+        local body = nil
+
+        if httpRequest then
+            pcall(function()
+                local res = httpRequest({
+                    Url = baseUrl,
+                    Method = "GET",
+                    Headers = {
+                        ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        ["Accept"] = "application/json"
+                    }
+                })
+                if res and (res.StatusCode == 200 or res.Status == 200) and res.Body then
+                    body = res.Body
+                end
+            end)
+        end
+
+        if not body then
+            pcall(function()
+                local res = game:HttpGet(baseUrl)
+                if res and string.find(res, "data") then
+                    body = res
+                end
+            end)
+        end
+
+        if body then
+            local ok, data = pcall(function()
+                return HttpService:JSONDecode(body)
+            end)
+            if ok and data and data.data then
+                for _, server in ipairs(data.data) do
+                    if type(server) == "table" and server.id then
+                        local playing = tonumber(server.playing) or 0
+                        local maxPlayers = tonumber(server.maxPlayers) or 0
+                        if server.id ~= currentJob and (maxPlayers == 0 or maxPlayers - playing >= 1) then
+                            table.insert(newPool, server.id)
+                        end
+                    end
+                end
+                if #newPool > 0 then
+                    saveStoredServerPool(newPool)
+                    return newPool
+                end
+            end
+        end
+        task.wait(0.25)
+    end
+    return newPool
 end
 
 local function hopServer()
@@ -411,35 +479,54 @@ local function hopServer()
         end)
     end
 
-    Fluent:Notify({ Title = "Server Hop", Content = "Searching for servers without friends...", Duration = 3 })
+    saveVisitedServer(game.JobId)
 
-    local targetServer = fetchRandomStrangerServer()
+    -- 1. ลองดึง server จาก Cache Pool ในเครื่องก่อน (ไม่ต้องยิง API)
+    local targetServer = getAvailableServerFromPool()
 
-    if targetServer then
-        saveVisitedServer(targetServer)
-        Fluent:Notify({ Title = "Server Hop", Content = "Found server! Hopping to " .. string.sub(targetServer, 1, 8) .. "...", Duration = 3 })
-        task.wait(0.5)
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, targetServer, LocalPlayer)
-    else
+    -- 2. ถ้าใน Cache หมดหรือเข้าครบแล้ว ค่อยดึงชุดใหม่ 100 servers จาก API
+    if not targetServer then
+        Fluent:Notify({ Title = "Server Hop", Content = "Searching server pool...", Duration = 2 })
+        fetchServersBatch()
+        targetServer = getAvailableServerFromPool()
+    end
+
+    -- 3. ถ้ายังไม่เจออีก แสดงว่าเคยวนครบทุกห้อง ให้รีเซ็ตประวัติห้องที่เคยเข้าแล้วดึงใหม่
+    if not targetServer then
         pcall(function()
             if writefile then writefile(VISITED_SERVERS_FILE, "{}") end
         end)
-        Fluent:Notify({ Title = "Server Hop", Content = "Refreshing server pool, retrying...", Duration = 2.5 })
-        task.wait(1.5)
-        local retryServer = fetchRandomStrangerServer()
-        if retryServer then
-            saveVisitedServer(retryServer)
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, retryServer, LocalPlayer)
-        else
-            Fluent:Notify({ Title = "Server Hop", Content = "API failed, hopping to random server...", Duration = 2.5 })
-            task.wait(0.5)
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end
+        targetServer = getAvailableServerFromPool()
     end
 
-    task.wait(4)
+    -- 4. วาปไปยัง Target Server ที่แน่นอน (ป้องกันการหลุดกลับมาห้องเดิม 100%)
+    if targetServer then
+        saveVisitedServer(targetServer)
+        Fluent:Notify({ Title = "Server Hop", Content = "Hopping to " .. string.sub(targetServer, 1, 8) .. "...", Duration = 2.5 })
+        task.wait(0.3)
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, targetServer, LocalPlayer)
+    else
+        Fluent:Notify({ Title = "Server Hop", Content = "API busy, retrying in 3s...", Duration = 3 })
+        task.wait(3)
+        isHopping = false
+        hopServer()
+        return
+    end
+
+    task.wait(5)
     isHopping = false
 end
+
+pcall(function()
+    TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+        if player == LocalPlayer then
+            isHopping = false
+            Fluent:Notify({ Title = "Hop Failed", Content = "Retrying another server...", Duration = 2 })
+            task.wait(1)
+            hopServer()
+        end
+    end)
+end)
 
 local function fastVoidDrop()
     local char = LocalPlayer.Character
@@ -479,18 +566,50 @@ end
 local function spamEggPickup(targetObj, targetPart, duration)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp or not targetPart or not targetPart.Parent then return false end
+
+    local prompt = targetObj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    local promptPart = prompt and prompt.Parent or targetPart
+    local targetPos = (promptPart:IsA("BasePart") and promptPart.Position)
+        or (promptPart:IsA("Attachment") and promptPart.WorldPosition)
+        or targetPart.Position
+
+    -- BodyVelocity ป้องกันไม่ให้ตัวละครร่วงตกแมพระหว่างเก็บไข่ โดยไม่ทำให้ Humanoid หรือ Prompt ค้าง
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "EggFloatVelocity"
+    bv.Velocity = Vector3.new(0, 0, 0)
+    bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+    bv.Parent = hrp
+
+    hrp.Anchored = false
+    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 1.2, 0.5))
+
     local endTime = tick() + duration
+    local pickedUp = false
 
     while tick() < endTime do
-        if hrp and targetPart and targetPart.Parent then
-            hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 1.5, 0))
-            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        if not targetObj.Parent then
+            pickedUp = true
+            break
         end
 
-        if fireproximityprompt and targetObj then
-            local prompt = targetObj:FindFirstChildWhichIsA("ProximityPrompt", true)
-            if prompt then fireproximityprompt(prompt) end
+        if hrp and promptPart and promptPart.Parent then
+            hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 1.2, 0.5))
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end
+
+        local currentPrompt = targetObj:FindFirstChildWhichIsA("ProximityPrompt", true)
+        if currentPrompt and currentPrompt.Enabled then
+            if fireproximityprompt then
+                pcall(fireproximityprompt, currentPrompt)
+            end
+            if VirtualInputManager then
+                pcall(function()
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                end)
+            end
         end
 
         if EggPickupRemote and targetObj then
@@ -503,14 +622,34 @@ local function spamEggPickup(targetObj, targetPart, duration)
             end)
         end
 
-        if firetouchinterest and hrp and targetPart then
-            firetouchinterest(hrp, targetPart, 0)
-            firetouchinterest(hrp, targetPart, 1)
+        if firetouchinterest and hrp and targetPart and targetPart.Parent then
+            pcall(function()
+                firetouchinterest(hrp, targetPart, 0)
+                firetouchinterest(hrp, targetPart, 1)
+            end)
         end
 
-        if not targetObj.Parent then break end
         task.wait(0.08)
     end
+
+    if VirtualInputManager then
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        end)
+    end
+
+    if not targetObj.Parent then
+        pickedUp = true
+    end
+
+    if bv and bv.Parent then
+        bv:Destroy()
+    end
+    if hrp then
+        hrp.Anchored = false
+    end
+
+    return pickedUp
 end
 
 local function updateEsp()
@@ -629,13 +768,11 @@ task.spawn(function()
 
                     if bestEgg and bestPart and bestEgg.Parent then
                         scanFailTime = 0
-                        hrp.CFrame = CFrame.new(bestPart.Position + Vector3.new(0, 1.5, 0))
-                        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-
-                        spamEggPickup(bestEgg, bestPart, PICKUP_DURATION)
-                        task.wait(HOLD_EGG_DELAY)
-                        fastVoidDrop()
+                        local collected = spamEggPickup(bestEgg, bestPart, PICKUP_DURATION)
+                        if collected then
+                            task.wait(HOLD_EGG_DELAY)
+                            fastVoidDrop()
+                        end
                     else
                         if AutoHopEnabled and not isHopping then
                             if scanFailTime == 0 then
