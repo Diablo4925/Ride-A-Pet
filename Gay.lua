@@ -1,3 +1,9 @@
+if _G.RideUrMoM_Running then
+    _G.RideUrMoM_Running = false
+    task.wait(0.2)
+end
+_G.RideUrMoM_Running = true
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
@@ -10,9 +16,20 @@ local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
+local playerGui = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui")
+local coreRoblox = CoreGui:FindFirstChild("RobloxGui") or playerGui
+
+if coreRoblox:FindFirstChild("AetherMobileWidget") then
+    coreRoblox.AetherMobileWidget:Destroy()
+end
+if playerGui:FindFirstChild("AetherMobileWidget") then
+    playerGui.AetherMobileWidget:Destroy()
+end
+
 local queueTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 local AUTO_EXEC_CODE = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Diablo4925/Ride-A-Pet/refs/heads/main/Gay.lua"))()'
 local CONFIG_FILE = "RideUrMoM_Config.json"
+local VISITED_SERVERS_FILE = "RideUrMoM_Visited.json"
 
 local AutoExecEnabled = true
 local AutoHopEnabled = false
@@ -165,7 +182,7 @@ LocalPlayer.Idled:Connect(function()
 end)
 
 task.spawn(function()
-    while true do
+    while _G.RideUrMoM_Running do
         task.wait(300)
         pcall(function()
             VirtualUser:CaptureController()
@@ -175,6 +192,7 @@ task.spawn(function()
 end)
 
 RunService.Stepped:Connect(function()
+    if not _G.RideUrMoM_Running then return end
     local char = LocalPlayer.Character
     if not char then return end
 
@@ -243,37 +261,87 @@ local function getCandidateEggs()
     return list
 end
 
+local function getVisitedServers()
+    local visited = {}
+    if readfile and isfile and isfile(VISITED_SERVERS_FILE) then
+        pcall(function()
+            local decoded = HttpService:JSONDecode(readfile(VISITED_SERVERS_FILE))
+            if type(decoded) == "table" then
+                visited = decoded
+            end
+        end)
+    end
+    return visited
+end
+
+local function saveVisitedServer(id)
+    if not writefile then return end
+    pcall(function()
+        local visited = getVisitedServers()
+        visited[id] = tick()
+        for k, v in pairs(visited) do
+            if tick() - v > 1800 then
+                visited[k] = nil
+            end
+        end
+        writefile(VISITED_SERVERS_FILE, HttpService:JSONEncode(visited))
+    end)
+end
+
 local function hopServer()
     if isHopping then return end
     isHopping = true
     armAutoExecute()
 
-    local placeId = game.PlaceId
-    local currentJobId = game.JobId
+    local currentJob = game.JobId
+    saveVisitedServer(currentJob)
+    local visited = getVisitedServers()
 
-    local success, res = pcall(function()
-        local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100", tostring(placeId))
-        return game:HttpGet(url)
-    end)
+    local cursor = ""
+    local viableServers = {}
 
-    if success and res then
-        local data = HttpService:JSONDecode(res)
-        if data and data.data then
-            local viableServers = {}
-            for _, server in ipairs(data.data) do
-                if type(server) == "table" and server.id ~= currentJobId and server.playing and server.maxPlayers and (server.maxPlayers - server.playing >= 2) then
-                    table.insert(viableServers, server.id)
+    for page = 1, 4 do
+        local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100%s", tostring(game.PlaceId), (cursor ~= "" and "&cursor=" .. cursor or ""))
+        local success, res = pcall(function()
+            return game:HttpGet(url)
+        end)
+
+        if success and res then
+            local data = nil
+            pcall(function() data = HttpService:JSONDecode(res) end)
+            if data and data.data then
+                for _, s in ipairs(data.data) do
+                    if type(s) == "table" and s.id ~= currentJob and not visited[s.id] and s.playing and s.maxPlayers then
+                        if (s.maxPlayers - s.playing >= 2) and (s.playing >= 1) then
+                            table.insert(viableServers, s.id)
+                        end
+                    end
                 end
+
+                if #viableServers >= 5 or not data.nextPageCursor then
+                    break
+                else
+                    cursor = data.nextPageCursor
+                end
+            else
+                break
             end
-            if #viableServers > 0 then
-                local chosenId = viableServers[math.random(1, #viableServers)]
-                TeleportService:TeleportToPlaceInstance(placeId, chosenId, LocalPlayer)
-                return
-            end
+        else
+            break
         end
+        task.wait(0.2)
     end
 
-    TeleportService:Teleport(placeId, LocalPlayer)
+    if #viableServers > 0 then
+        local picked = viableServers[math.random(1, #viableServers)]
+        saveVisitedServer(picked)
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, picked, LocalPlayer)
+    else
+        pcall(function()
+            if writefile then writefile(VISITED_SERVERS_FILE, "{}") end
+        end)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end
 end
 
 local function fastVoidDrop()
@@ -411,14 +479,14 @@ local function updateEsp()
 end
 
 task.spawn(function()
-    while true do
+    while _G.RideUrMoM_Running do
         if EspActive then pcall(updateEsp) end
         task.wait(1.5)
     end
 end)
 
 task.spawn(function()
-    while true do
+    while _G.RideUrMoM_Running do
         if AutoFarmActive then
             pcall(function()
                 local char = LocalPlayer.Character
@@ -469,9 +537,7 @@ task.spawn(function()
                         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 
                         spamEggPickup(bestEgg, bestPart, PICKUP_DURATION)
-
                         task.wait(HOLD_EGG_DELAY)
-
                         fastVoidDrop()
                     else
                         if AutoHopEnabled and not isHopping then
@@ -511,7 +577,7 @@ local Tabs = {
 
 Tabs.Main:AddParagraph({
     Title = "Ride Ur MoM • Harvester",
-    Content = "Instant void fall return (-650 Y). Noclip, Anti-Ragdoll, Anti-AFK & Auto-Save active."
+    Content = "Instant void fall return (-650 Y). Prioritizes Highest Luck & Biggest Size."
 })
 
 local FarmToggle = Tabs.Main:AddToggle("AutoFarmToggle", {
@@ -618,7 +684,7 @@ Tabs.Eggs:AddButton({
 
 Tabs.Server:AddParagraph({
     Title = "Automation & Server Hop",
-    Content = "Auto Hop switches servers when no target eggs remain. Auto Execute re-injects script on teleport."
+    Content = "Smart Server Hop searches multiple pages & avoids recent servers."
 })
 
 local HopToggle = Tabs.Server:AddToggle("AutoHopToggle", {
@@ -651,7 +717,7 @@ Tabs.Server:AddButton({
     Title = "Server Hop Now",
     Description = "Instantly switch to another active public server",
     Callback = function()
-        Fluent:Notify({ Title = "Server Hop", Content = "Finding a server...", Duration = 2 })
+        Fluent:Notify({ Title = "Server Hop", Content = "Searching for a new server...", Duration = 2 })
         hopServer()
     end
 })
@@ -722,10 +788,6 @@ Render3dToggle:OnChanged(function()
 end)
 
 local targetGuiParent = (gethui and gethui()) or CoreGui:FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
-
-if targetGuiParent:FindFirstChild("AetherMobileWidget") then
-    targetGuiParent.AetherMobileWidget:Destroy()
-end
 
 local WidgetGui = Instance.new("ScreenGui")
 WidgetGui.Name = "AetherMobileWidget"
