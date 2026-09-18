@@ -1,8 +1,16 @@
-if _G.RideUrMoM_Running then
+if _G.RideUrMoM_Instance then
+    pcall(function()
+        _G.RideUrMoM_Instance:Destroy()
+    end)
     _G.RideUrMoM_Running = false
-    task.wait(0.2)
+    task.wait(0.5)
 end
+
 _G.RideUrMoM_Running = true
+local currentScriptSession = tick()
+_G.RideUrMoM_Session = currentScriptSession
+
+task.wait(5)
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -19,12 +27,13 @@ local LocalPlayer = Players.LocalPlayer
 local playerGui = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui")
 local coreRoblox = CoreGui:FindFirstChild("RobloxGui") or playerGui
 
-if coreRoblox:FindFirstChild("AetherMobileWidget") then
-    coreRoblox.AetherMobileWidget:Destroy()
+local function cleanupOldWidgets()
+    for _, parent in ipairs({coreRoblox, playerGui, CoreGui}) do
+        local old = parent:FindFirstChild("AetherMobileWidget")
+        if old then pcall(function() old:Destroy() end) end
+    end
 end
-if playerGui:FindFirstChild("AetherMobileWidget") then
-    playerGui.AetherMobileWidget:Destroy()
-end
+cleanupOldWidgets()
 
 local queueTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 local AUTO_EXEC_CODE = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Diablo4925/Ride-A-Pet/refs/heads/main/Gay.lua"))()'
@@ -40,15 +49,6 @@ local scanFailTime = 0
 local isHopping = false
 local currentFpsCap = 60
 local is3dDisabled = false
-
-local function armAutoExecute()
-    if AutoExecEnabled and queueTeleport then
-        pcall(function()
-            queueTeleport(AUTO_EXEC_CODE)
-        end)
-    end
-end
-armAutoExecute()
 
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
@@ -182,7 +182,7 @@ LocalPlayer.Idled:Connect(function()
 end)
 
 task.spawn(function()
-    while _G.RideUrMoM_Running do
+    while _G.RideUrMoM_Running and _G.RideUrMoM_Session == currentScriptSession do
         task.wait(300)
         pcall(function()
             VirtualUser:CaptureController()
@@ -192,7 +192,7 @@ task.spawn(function()
 end)
 
 RunService.Stepped:Connect(function()
-    if not _G.RideUrMoM_Running then return end
+    if not _G.RideUrMoM_Running or _G.RideUrMoM_Session ~= currentScriptSession then return end
     local char = LocalPlayer.Character
     if not char then return end
 
@@ -291,7 +291,12 @@ end
 local function hopServer()
     if isHopping then return end
     isHopping = true
-    armAutoExecute()
+
+    if AutoExecEnabled and queueTeleport then
+        pcall(function()
+            queueTeleport(AUTO_EXEC_CODE)
+        end)
+    end
 
     local currentJob = game.JobId
     saveVisitedServer(currentJob)
@@ -479,14 +484,14 @@ local function updateEsp()
 end
 
 task.spawn(function()
-    while _G.RideUrMoM_Running do
+    while _G.RideUrMoM_Running and _G.RideUrMoM_Session == currentScriptSession do
         if EspActive then pcall(updateEsp) end
         task.wait(1.5)
     end
 end)
 
 task.spawn(function()
-    while _G.RideUrMoM_Running do
+    while _G.RideUrMoM_Running and _G.RideUrMoM_Session == currentScriptSession do
         if AutoFarmActive then
             pcall(function()
                 local char = LocalPlayer.Character
@@ -566,6 +571,8 @@ local Window = Fluent:CreateWindow({
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftControl
 })
+
+_G.RideUrMoM_Instance = Fluent.GUI
 
 local Tabs = {
     Main = Window:AddTab({ Title = "Auto Farm", Icon = "play" }),
@@ -709,7 +716,6 @@ local ExecToggle = Tabs.Server:AddToggle("AutoExecToggle", {
 
 ExecToggle:OnChanged(function()
     AutoExecEnabled = Fluent.Options.AutoExecToggle.Value
-    armAutoExecute()
     saveConfig()
 end)
 
@@ -725,7 +731,9 @@ Tabs.Server:AddButton({
 Tabs.Server:AddButton({
     Title = "Rejoin Current Server",
     Callback = function()
-        armAutoExecute()
+        if AutoExecEnabled and queueTeleport then
+            pcall(function() queueTeleport(AUTO_EXEC_CODE) end)
+        end
         TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
     end
 })
