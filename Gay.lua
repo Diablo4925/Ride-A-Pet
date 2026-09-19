@@ -6,6 +6,27 @@ if _G.RideUrMoM_Instance then
     task.wait(0.5)
 end
 
+if _G.RideUrMoM_Connections then
+    for _, conn in ipairs(_G.RideUrMoM_Connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    table.clear(_G.RideUrMoM_Connections)
+end
+_G.RideUrMoM_Connections = {}
+
+local function trackConnection(conn)
+    table.insert(_G.RideUrMoM_Connections, conn)
+    return conn
+end
+
+if _G.RideUrMoM_Billboards then
+    for _, bb in pairs(_G.RideUrMoM_Billboards) do
+        pcall(function() bb:Destroy() end)
+    end
+    table.clear(_G.RideUrMoM_Billboards)
+end
+_G.RideUrMoM_Billboards = {}
+
 _G.RideUrMoM_Running = true
 local currentScriptSession = tick()
 _G.RideUrMoM_Session = currentScriptSession
@@ -45,12 +66,13 @@ local SERVER_POOL_FILE = "RideUrMoM_ServerPool.json"
 local AutoExecEnabled = true
 local AutoHopEnabled = false
 local AutoFarmActive = false
-local EspActive = true
+local EspActive = false
 local HopDelay = 5
 local scanFailTime = 0
 local isHopping = false
-local currentFpsCap = 60
-local is3dDisabled = false
+local currentFpsCap = 30
+local disable3dActive = false
+local autoPurgePopups = true
 
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
@@ -60,36 +82,43 @@ local EggPickupRemote = GameRemotes and GameRemotes:FindFirstChild("EggPickup")
 
 local VOID_FALL_HEIGHT = -650
 local DROP_TIME = 0.2
-local WARP_WAIT = 0.85
-local PICKUP_DURATION = 3.0
-local HOLD_EGG_DELAY = 1.5
+local WARP_WAIT = 0.75
+local PICKUP_DURATION = 2.0
+local HOLD_EGG_DELAY = 0.8
 
 local currentTween = nil
-local trackedBillboards = {}
+local trackedBillboards = _G.RideUrMoM_Billboards
 
 local RealEggDatabase = {
-    ["Cherub Egg"] = {Luck = 1000000000000, Color = Color3.fromRGB(244, 180, 255), Tag = "1T"},
-    ["Blackhole Egg"] = {Luck = 100000000000, Color = Color3.fromRGB(186, 104, 255), Tag = "100B"},
-    ["Galaxy Egg"] = {Luck = 1500000000, Color = Color3.fromRGB(255, 120, 220), Tag = "1.5B"},
-    ["Aurora Egg"] = {Luck = 300000000, Color = Color3.fromRGB(80, 250, 210), Tag = "300M"},
-    ["Soul Egg"] = {Luck = 7000000, Color = Color3.fromRGB(60, 230, 160), Tag = "7M"},
-    ["Sinister Egg"] = {Luck = 3000000, Color = Color3.fromRGB(255, 75, 75), Tag = "3M"},
-    ["Flaming Egg"] = {Luck = 1000000, Color = Color3.fromRGB(255, 130, 60), Tag = "1M"},
-    ["Dominus Egg"] = {Luck = 700000, Color = Color3.fromRGB(255, 80, 90), Tag = "700k"},
-    ["Asteroid Egg"] = {Luck = 500000, Color = Color3.fromRGB(255, 175, 60), Tag = "500k"},
-    ["Skull Egg"] = {Luck = 250000, Color = Color3.fromRGB(200, 205, 215), Tag = "250k"},
-    ["Crystal Egg"] = {Luck = 150000, Color = Color3.fromRGB(200, 130, 255), Tag = "150k"},
-    ["Diamond Egg"] = {Luck = 90000, Color = Color3.fromRGB(70, 210, 255), Tag = "90k"},
-    ["Golden Egg"] = {Luck = 30000, Color = Color3.fromRGB(255, 210, 70), Tag = "30k"},
-    ["Glass Egg"] = {Luck = 10000, Color = Color3.fromRGB(210, 235, 255), Tag = "10k"},
-    ["Ice Egg"] = {Luck = 3000, Color = Color3.fromRGB(130, 210, 255), Tag = "3k"},
-    ["Slime Egg"] = {Luck = 1000, Color = Color3.fromRGB(90, 240, 140), Tag = "1k"},
-    ["Flower Egg"] = {Luck = 750, Color = Color3.fromRGB(255, 170, 205), Tag = "750"},
-    ["Mushroom Egg"] = {Luck = 500, Color = Color3.fromRGB(255, 140, 140), Tag = "500"},
-    ["Dragon Egg"] = {Luck = 500000000000, Color = Color3.fromRGB(255, 75, 75), Tag = "PREM"},
-    ["Giant Egg"] = {Luck = 500000000000, Color = Color3.fromRGB(255, 160, 50), Tag = "PREM"},
-    ["Devil Fruit Egg"] = {Luck = 999999999999, Color = Color3.fromRGB(255, 65, 85), Tag = "SECRET"},
-    ["Admin Egg"] = {Luck = 999999999999, Color = Color3.fromRGB(255, 240, 70), Tag = "ADMIN"}
+    ["Admin Egg"]        = {Luck = 999999999999, Color = Color3.fromRGB(255, 240, 70),  Tag = "ADMIN"},
+    ["Devil Fruit Egg"]  = {Luck = 999999999999, Color = Color3.fromRGB(255, 65, 85),   Tag = "SECRET"},
+    ["Dragon Egg"]       = {Luck = 500000000000, Color = Color3.fromRGB(255, 75, 75),   Tag = "PREM"},
+    ["Giant Egg"]        = {Luck = 500000000000, Color = Color3.fromRGB(255, 160, 50),  Tag = "PREM"},
+    ["Cherub Egg"]       = {Luck = 1000000000000, Color = Color3.fromRGB(244, 180, 255), Tag = "1T"},
+    ["Solaris Egg"]      = {Luck = 300000000000,  Color = Color3.fromRGB(255, 130, 30),  Tag = "300B"},
+    ["Blackhole Egg"]    = {Luck = 100000000000,  Color = Color3.fromRGB(186, 104, 255), Tag = "100B"},
+    ["Galaxy Egg"]       = {Luck = 1500000000,    Color = Color3.fromRGB(255, 120, 220), Tag = "1.5B"},
+    ["Aurora Egg"]       = {Luck = 300000000,     Color = Color3.fromRGB(80, 250, 210),  Tag = "300M"},
+    ["Soul Egg"]         = {Luck = 7000000,  Color = Color3.fromRGB(60, 230, 160),  Tag = "7M"},
+    ["Sinister Egg"]     = {Luck = 3000000,  Color = Color3.fromRGB(255, 75, 75),   Tag = "3M"},
+    ["Flaming Egg"]      = {Luck = 1000000,  Color = Color3.fromRGB(255, 130, 60),  Tag = "1M"},
+    ["Dominus Egg"]      = {Luck = 700000,   Color = Color3.fromRGB(255, 80, 90),   Tag = "700K"},
+    ["Asteroid Egg"]     = {Luck = 500000,   Color = Color3.fromRGB(255, 175, 60),  Tag = "500K"},
+    ["Skull Egg"]        = {Luck = 250000,   Color = Color3.fromRGB(200, 205, 215), Tag = "250K"},
+    ["Crystal Egg"]      = {Luck = 150000,   Color = Color3.fromRGB(200, 130, 255), Tag = "150K"},
+    ["Diamond Egg"]      = {Luck = 90000,    Color = Color3.fromRGB(70, 210, 255),  Tag = "90K"},
+    ["Golden Egg"]       = {Luck = 30000,    Color = Color3.fromRGB(255, 210, 70),  Tag = "30K"},
+    ["Glass Egg"]        = {Luck = 10000, Color = Color3.fromRGB(210, 235, 255), Tag = "10K"},
+    ["Ice Egg"]          = {Luck = 3000,  Color = Color3.fromRGB(130, 210, 255), Tag = "3K"},
+    ["Slime Egg"]        = {Luck = 1000,  Color = Color3.fromRGB(90, 240, 140),  Tag = "1K"},
+    ["Flower Egg"]       = {Luck = 750,   Color = Color3.fromRGB(255, 170, 205), Tag = "750"},
+    ["Mushroom Egg"]     = {Luck = 500,   Color = Color3.fromRGB(255, 140, 140), Tag = "500"},
+    ["Leaf Egg"]         = {Luck = 200,   Color = Color3.fromRGB(100, 220, 80),  Tag = "200"},
+    ["Stone Egg"]        = {Luck = 100, Color = Color3.fromRGB(160, 160, 160), Tag = "100"},
+    ["Easter Egg"]       = {Luck = 50,  Color = Color3.fromRGB(255, 200, 240), Tag = "50"},
+    ["Cracked Egg"]      = {Luck = 30,  Color = Color3.fromRGB(200, 185, 150), Tag = "30"},
+    ["Brown Egg"]        = {Luck = 5,   Color = Color3.fromRGB(180, 120, 60),  Tag = "5"},
+    ["White Egg"]        = {Luck = 1,   Color = Color3.fromRGB(240, 240, 245), Tag = "1"},
 }
 
 local DisplayToReal = {}
@@ -110,23 +139,29 @@ table.sort(displayList, function(a, b)
 end)
 
 local SelectedEggs = {
-    ["Cherub Egg"] = true,
-    ["Blackhole Egg"] = true,
-    ["Galaxy Egg"] = true,
-    ["Aurora Egg"] = true,
-    ["Soul Egg"] = true,
-    ["Sinister Egg"] = true,
-    ["Flaming Egg"] = true,
-    ["Dominus Egg"] = true,
-    ["Asteroid Egg"] = true,
-    ["Skull Egg"] = true,
-    ["Diamond Egg"] = true,
-    ["Crystal Egg"] = true,
-    ["Dragon Egg"] = true,
-    ["Giant Egg"] = true,
+    ["Cherub Egg"]      = true,
+    ["Blackhole Egg"]   = true,
+    ["Solaris Egg"]     = true,
+    ["Galaxy Egg"]      = true,
+    ["Aurora Egg"]      = true,
+    ["Soul Egg"]        = true,
+    ["Sinister Egg"]    = true,
+    ["Dominus Egg"]     = true,
+    ["Skull Egg"]       = true,
+    ["Diamond Egg"]     = true,
+    ["Crystal Egg"]     = true,
+    ["Dragon Egg"]      = true,
+    ["Giant Egg"]       = true,
     ["Devil Fruit Egg"] = true,
-    ["Admin Egg"] = true
+    ["Admin Egg"]       = true
 }
+
+local function setDisable3D(enable)
+    disable3dActive = enable
+    if RunService.Set3dRenderingEnabled then
+        pcall(RunService.Set3dRenderingEnabled, RunService, not enable)
+    end
+end
 
 local function saveConfig()
     if not writefile then return end
@@ -137,7 +172,8 @@ local function saveConfig()
             AutoExec = AutoExecEnabled,
             Esp = EspActive,
             Fps = currentFpsCap,
-            Disable3D = is3dDisabled,
+            Disable3D = disable3dActive,
+            AutoPurge = autoPurgePopups,
             Selected = SelectedEggs
         }
         writefile(CONFIG_FILE, HttpService:JSONEncode(data))
@@ -155,7 +191,12 @@ local function loadConfig()
             if data.AutoExec ~= nil then AutoExecEnabled = data.AutoExec end
             if data.Esp ~= nil then EspActive = data.Esp end
             if data.Fps ~= nil then currentFpsCap = data.Fps end
-            if data.Disable3D ~= nil then is3dDisabled = data.Disable3D end
+            if data.Disable3D ~= nil then
+                disable3dActive = data.Disable3D
+            elseif data.SafeBlackScreen ~= nil then
+                disable3dActive = data.SafeBlackScreen
+            end
+            if data.AutoPurge ~= nil then autoPurgePopups = data.AutoPurge end
             if data.Selected and type(data.Selected) == "table" then
                 SelectedEggs = data.Selected
             end
@@ -167,8 +208,11 @@ loadConfig()
 if setfpscap and currentFpsCap then
     pcall(setfpscap, currentFpsCap)
 end
-if is3dDisabled and RunService.Set3dRenderingEnabled then
-    pcall(RunService.Set3dRenderingEnabled, RunService, false)
+
+if disable3dActive then
+    task.defer(function()
+        setDisable3D(true)
+    end)
 end
 
 local initialDisplayDefault = {}
@@ -205,10 +249,50 @@ end
 
 secureAntiAFK()
 
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1)
+local cachedCharacterParts = {}
+
+local function setupHumanoid(char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.PlatformStand = false
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    end
+end
+
+local function updateCharacterParts(char)
+    table.clear(cachedCharacterParts)
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            table.insert(cachedCharacterParts, part)
+        end
+    end
+    setupHumanoid(char)
+end
+
+if LocalPlayer.Character then
+    updateCharacterParts(LocalPlayer.Character)
+end
+
+trackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    updateCharacterParts(char)
+    trackConnection(char.DescendantAdded:Connect(function(desc)
+        if desc:IsA("BasePart") then
+            table.insert(cachedCharacterParts, desc)
+        end
+    end))
+    trackConnection(char.DescendantRemoving:Connect(function(desc)
+        if desc:IsA("BasePart") then
+            local idx = table.find(cachedCharacterParts, desc)
+            if idx then
+                table.remove(cachedCharacterParts, idx)
+            end
+        end
+    end))
     secureAntiAFK()
-end)
+end))
 
 task.spawn(function()
     while _G.RideUrMoM_Running and _G.RideUrMoM_Session == currentScriptSession do
@@ -221,97 +305,180 @@ task.spawn(function()
                 VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
             end
         end)
+        pcall(collectgarbage, "collect")
     end
 end)
 
-RunService.Stepped:Connect(function()
+trackConnection(RunService.Stepped:Connect(function()
     if not _G.RideUrMoM_Running or _G.RideUrMoM_Session ~= currentScriptSession then return end
     local char = LocalPlayer.Character
     if not char then return end
 
     if AutoFarmActive then
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part.CanCollide then
-                part.CanCollide = false
+        for i = #cachedCharacterParts, 1, -1 do
+            local part = cachedCharacterParts[i]
+            if part and part.Parent then
+                if part.CanCollide then
+                    part.CanCollide = false
+                end
+            else
+                table.remove(cachedCharacterParts, i)
             end
         end
     end
 
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.PlatformStand = false
-        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-    end
     if hrp and not currentTween then
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
     end
-end)
+end))
+
+local renderedEggsFolder = Workspace:FindFirstChild("RenderedEggs")
+
+local eggPromptCache = setmetatable({}, { __mode = "k" })
+local eggPartCache = setmetatable({}, { __mode = "k" })
+local eggSizeCache = setmetatable({}, { __mode = "k" })
+
+local function getEggPrompt(obj)
+    local cached = eggPromptCache[obj]
+    if cached and cached.Parent then
+        return cached
+    end
+    local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt then
+        eggPromptCache[obj] = prompt
+    end
+    return prompt
+end
 
 local function isWildEgg(obj)
     if not obj or not obj.Parent then return false end
-    if obj:FindFirstAncestor("Plots") or obj:FindFirstAncestor("Plot") or obj:FindFirstAncestor("Nests") or obj:FindFirstAncestor("EggBaskets") then
+    if not renderedEggsFolder or not renderedEggsFolder.Parent then
+        renderedEggsFolder = Workspace:FindFirstChild("RenderedEggs")
+    end
+    if renderedEggsFolder and obj.Parent ~= renderedEggsFolder then
         return false
     end
-    if obj:FindFirstAncestorOfClass("Player") or obj:FindFirstAncestorOfClass("Backpack") then
-        return false
-    end
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player.Character and obj:IsDescendantOf(player.Character) then
-            return false
-        end
-    end
-    local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
-    if not prompt or not prompt.Enabled then
-        return false
-    end
-    return true
+    local prompt = getEggPrompt(obj)
+    return prompt ~= nil and prompt.Enabled
 end
 
 local function getBestPart(obj)
-    local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    local cached = eggPartCache[obj]
+    if cached and cached.Parent then
+        return cached
+    end
+
+    local prompt = getEggPrompt(obj)
     if prompt and prompt.Parent then
         if prompt.Parent:IsA("BasePart") then
+            eggPartCache[obj] = prompt.Parent
             return prompt.Parent
         elseif prompt.Parent:IsA("Attachment") and prompt.Parent.Parent and prompt.Parent.Parent:IsA("BasePart") then
+            eggPartCache[obj] = prompt.Parent.Parent
             return prompt.Parent.Parent
         end
     end
-    if obj:IsA("BasePart") then return obj end
-    return obj:FindFirstChild("Handle") or obj:FindFirstChild("EggBase") or obj:FindFirstChildWhichIsA("BasePart")
+    local part = (obj:IsA("BasePart") and obj)
+        or obj:FindFirstChild("Handle")
+        or obj:FindFirstChild("EggBase")
+        or obj:FindFirstChildWhichIsA("BasePart")
+
+    if part then
+        eggPartCache[obj] = part
+    end
+    return part
 end
 
 local function getEggSize(obj)
+    local cached = eggSizeCache[obj]
+    if cached then return cached end
+
     local scaleAttr = obj:GetAttribute("Scale") or obj:GetAttribute("Size") or obj:GetAttribute("EggScale")
-    if type(scaleAttr) == "number" then return scaleAttr end
-    if typeof(scaleAttr) == "Vector3" then return scaleAttr.Magnitude end
+    if type(scaleAttr) == "number" then
+        eggSizeCache[obj] = scaleAttr
+        return scaleAttr
+    end
+    if typeof(scaleAttr) == "Vector3" then
+        local mag = scaleAttr.Magnitude
+        eggSizeCache[obj] = mag
+        return mag
+    end
 
     if obj:IsA("Model") then
         local cf, size = obj:GetBoundingBox()
-        return size.X * size.Y * size.Z
+        local vol = size.X * size.Y * size.Z
+        eggSizeCache[obj] = vol
+        return vol
     elseif obj:IsA("BasePart") then
-        return obj.Size.X * obj.Size.Y * obj.Size.Z
+        local vol = obj.Size.X * obj.Size.Y * obj.Size.Z
+        eggSizeCache[obj] = vol
+        return vol
     end
 
     local best = getBestPart(obj)
     if best then
-        return best.Size.X * best.Size.Y * best.Size.Z
+        local vol = best.Size.X * best.Size.Y * best.Size.Z
+        eggSizeCache[obj] = vol
+        return vol
     end
+
+    eggSizeCache[obj] = 1
     return 1
 end
 
+local activeWildEggs = {}
+local candidateListCache = {}
+
+local function registerEgg(egg)
+    if isWildEgg(egg) then
+        activeWildEggs[egg] = true
+    end
+end
+
+local function unregisterEgg(egg)
+    activeWildEggs[egg] = nil
+    eggPromptCache[egg] = nil
+    eggPartCache[egg] = nil
+    eggSizeCache[egg] = nil
+end
+
+local function initEggTracking()
+    table.clear(activeWildEggs)
+    renderedEggsFolder = Workspace:FindFirstChild("RenderedEggs")
+    if not renderedEggsFolder then return end
+
+    for _, egg in ipairs(renderedEggsFolder:GetChildren()) do
+        registerEgg(egg)
+    end
+
+    trackConnection(renderedEggsFolder.ChildAdded:Connect(function(egg)
+        task.wait(0.1)
+        registerEgg(egg)
+    end))
+
+    trackConnection(renderedEggsFolder.ChildRemoved:Connect(function(egg)
+        unregisterEgg(egg)
+    end))
+end
+
+initEggTracking()
+
 local function getCandidateEggs()
-    local list = {}
-    local rendered = Workspace:FindFirstChild("RenderedEggs")
-    if rendered then
-        for _, obj in ipairs(rendered:GetChildren()) do
-            if isWildEgg(obj) then
-                table.insert(list, obj)
-            end
+    table.clear(candidateListCache)
+    if not renderedEggsFolder or not renderedEggsFolder.Parent then
+        initEggTracking()
+        if not renderedEggsFolder then return candidateListCache end
+    end
+
+    for egg in pairs(activeWildEggs) do
+        if egg.Parent == renderedEggsFolder then
+            table.insert(candidateListCache, egg)
+        else
+            unregisterEgg(egg)
         end
     end
-    return list
+    return candidateListCache
 end
 
 local function getVisitedServers()
@@ -481,17 +648,14 @@ local function hopServer()
 
     saveVisitedServer(game.JobId)
 
-    -- 1. ลองดึง server จาก Cache Pool ในเครื่องก่อน (ไม่ต้องยิง API)
     local targetServer = getAvailableServerFromPool()
 
-    -- 2. ถ้าใน Cache หมดหรือเข้าครบแล้ว ค่อยดึงชุดใหม่ 100 servers จาก API
     if not targetServer then
         Fluent:Notify({ Title = "Server Hop", Content = "Searching server pool...", Duration = 2 })
         fetchServersBatch()
         targetServer = getAvailableServerFromPool()
     end
 
-    -- 3. ถ้ายังไม่เจออีก แสดงว่าเคยวนครบทุกห้อง ให้รีเซ็ตประวัติห้องที่เคยเข้าแล้วดึงใหม่
     if not targetServer then
         pcall(function()
             if writefile then writefile(VISITED_SERVERS_FILE, "{}") end
@@ -499,7 +663,6 @@ local function hopServer()
         targetServer = getAvailableServerFromPool()
     end
 
-    -- 4. วาปไปยัง Target Server ที่แน่นอน (ป้องกันการหลุดกลับมาห้องเดิม 100%)
     if targetServer then
         saveVisitedServer(targetServer)
         Fluent:Notify({ Title = "Server Hop", Content = "Hopping to " .. string.sub(targetServer, 1, 8) .. "...", Duration = 2.5 })
@@ -536,7 +699,11 @@ local function fastVoidDrop()
     local voidTarget = CFrame.new(hrp.Position.X, VOID_FALL_HEIGHT, hrp.Position.Z)
     local tweenInfo = TweenInfo.new(DROP_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
-    if currentTween then currentTween:Cancel() end
+    if currentTween then
+        currentTween:Cancel()
+        pcall(function() currentTween:Destroy() end)
+        currentTween = nil
+    end
     currentTween = TweenService:Create(hrp, tweenInfo, {CFrame = voidTarget})
     currentTween:Play()
 
@@ -552,7 +719,11 @@ local function fastVoidDrop()
     end
 
     if conn then conn:Disconnect() end
-    if currentTween then currentTween:Cancel() currentTween = nil end
+    if currentTween then
+        currentTween:Cancel()
+        pcall(function() currentTween:Destroy() end)
+        currentTween = nil
+    end
 
     if hrp and hrp.Parent then
         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
@@ -568,39 +739,41 @@ local function spamEggPickup(targetObj, targetPart, duration)
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp or not targetPart or not targetPart.Parent then return false end
 
-    local prompt = targetObj:FindFirstChildWhichIsA("ProximityPrompt", true)
+    local prompt = getEggPrompt(targetObj)
     local promptPart = prompt and prompt.Parent or targetPart
     local targetPos = (promptPart:IsA("BasePart") and promptPart.Position)
         or (promptPart:IsA("Attachment") and promptPart.WorldPosition)
         or targetPart.Position
 
-    -- BodyVelocity ป้องกันไม่ให้ตัวละครร่วงตกแมพระหว่างเก็บไข่ โดยไม่ทำให้ Humanoid หรือ Prompt ค้าง
-    local bv = Instance.new("BodyVelocity")
-    bv.Name = "EggFloatVelocity"
+    local bv = hrp:FindFirstChild("EggFloatVelocity")
+    if not bv then
+        bv = Instance.new("BodyVelocity")
+        bv.Name = "EggFloatVelocity"
+        bv.Parent = hrp
+    end
     bv.Velocity = Vector3.new(0, 0, 0)
     bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-    bv.Parent = hrp
 
     hrp.Anchored = false
     hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-    hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 1.2, 0.5))
+    hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 0.6, 0.2))
 
     local endTime = tick() + duration
     local pickedUp = false
 
     while tick() < endTime do
-        if not targetObj.Parent then
+        if not targetObj.Parent or (renderedEggsFolder and targetObj.Parent ~= renderedEggsFolder) then
             pickedUp = true
             break
         end
 
         if hrp and promptPart and promptPart.Parent then
-            hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 1.2, 0.5))
+            hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 0.6, 0.2))
             hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         end
 
-        local currentPrompt = targetObj:FindFirstChildWhichIsA("ProximityPrompt", true)
+        local currentPrompt = getEggPrompt(targetObj)
         if currentPrompt and currentPrompt.Enabled then
             if fireproximityprompt then
                 pcall(fireproximityprompt, currentPrompt)
@@ -612,7 +785,7 @@ local function spamEggPickup(targetObj, targetPart, duration)
             end
         end
 
-        if EggPickupRemote and targetObj then
+        if EggPickupRemote and targetObj and targetObj.Parent then
             pcall(function()
                 if EggPickupRemote:IsA("RemoteEvent") then
                     EggPickupRemote:FireServer(targetObj)
@@ -629,7 +802,7 @@ local function spamEggPickup(targetObj, targetPart, duration)
             end)
         end
 
-        task.wait(0.08)
+        task.wait(0.04)
     end
 
     if VirtualInputManager then
@@ -638,12 +811,12 @@ local function spamEggPickup(targetObj, targetPart, duration)
         end)
     end
 
-    if not targetObj.Parent then
+    if not targetObj.Parent or (renderedEggsFolder and targetObj.Parent ~= renderedEggsFolder) then
         pickedUp = true
     end
 
     if bv and bv.Parent then
-        bv:Destroy()
+        bv.MaxForce = Vector3.new(0, 0, 0)
     end
     if hrp then
         hrp.Anchored = false
@@ -652,23 +825,34 @@ local function spamEggPickup(targetObj, targetPart, duration)
     return pickedUp
 end
 
+local validObjs = {}
+
+local function removeBillboard(obj)
+    local bb = trackedBillboards[obj]
+    if bb then
+        pcall(function() bb:Destroy() end)
+        trackedBillboards[obj] = nil
+    end
+end
+
 local function updateEsp()
     if not EspActive then return end
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local candidates = getCandidateEggs()
-    local validObjs = {}
+    table.clear(validObjs)
 
-    for _, obj in ipairs(candidates) do
+    for i = 1, #candidates do
+        local obj = candidates[i]
         local info = RealEggDatabase[obj.Name]
-        if info and SelectedEggs[obj.Name] and isWildEgg(obj) then
+        if info and SelectedEggs[obj.Name] then
             local p = getBestPart(obj)
             if p and p.Parent then
                 validObjs[obj] = true
                 local bb = trackedBillboards[obj]
                 local dist = hrp and math.floor((hrp.Position - p.Position).Magnitude) or 0
 
-                if not bb then
+                if not bb or not bb.Parent then
                     bb = Instance.new("BillboardGui")
                     bb.Name = "FluentEggBillboard"
                     bb.Size = UDim2.new(0, 130, 0, 22)
@@ -696,6 +880,14 @@ local function updateEsp()
                     label.TextSize = 9
 
                     trackedBillboards[obj] = bb
+
+                    local conn
+                    conn = obj.AncestryChanged:Connect(function(_, parent)
+                        if not parent then
+                            removeBillboard(obj)
+                            if conn then conn:Disconnect() end
+                        end
+                    end)
                 else
                     local l = bb:FindFirstChild("Text", true)
                     if l then
@@ -708,8 +900,7 @@ local function updateEsp()
 
     for obj, bb in pairs(trackedBillboards) do
         if not validObjs[obj] or not obj.Parent then
-            if bb then bb:Destroy() end
-            trackedBillboards[obj] = nil
+            removeBillboard(obj)
         end
     end
 end
@@ -734,11 +925,12 @@ task.spawn(function()
                     local biggestSize = -1
                     local shortestDist = 99999
 
-                    for _, obj in ipairs(candidates) do
+                    for i = 1, #candidates do
+                        local obj = candidates[i]
                         local info = RealEggDatabase[obj.Name]
-                        if info and SelectedEggs[obj.Name] and isWildEgg(obj) then
+                        if info and SelectedEggs[obj.Name] then
                             local p = getBestPart(obj)
-                            if p and p.Parent and isWildEgg(p) then
+                            if p and p.Parent then
                                 local dist = (hrp.Position - p.Position).Magnitude
                                 local currentSize = getEggSize(obj)
 
@@ -791,17 +983,50 @@ task.spawn(function()
     end
 end)
 
+local function purgePopupsAndEffects()
+    if not autoPurgePopups then return end
+    pcall(function()
+        local camera = Workspace.CurrentCamera
+        if camera then
+            for _, obj in ipairs(camera:GetChildren()) do
+                if obj:IsA("BillboardGui") or obj:IsA("Part") then
+                    pcall(function() obj:Destroy() end)
+                end
+            end
+        end
+
+        local char = LocalPlayer.Character
+        if char then
+            for _, bb in ipairs(char:GetDescendants()) do
+                if bb:IsA("BillboardGui") and bb.Name ~= "FluentEggBillboard" then
+                    pcall(function() bb:Destroy() end)
+                end
+            end
+        end
+    end)
+end
+
+task.spawn(function()
+    while _G.RideUrMoM_Running and _G.RideUrMoM_Session == currentScriptSession do
+        task.wait(10)
+        purgePopupsAndEffects()
+    end
+end)
+
 local Window = Fluent:CreateWindow({
     Title = "Ride Ur MoM",
     SubTitle = "By. Diablo",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
-    Acrylic = true,
+    Acrylic = false,
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftControl
 })
 
 _G.RideUrMoM_Instance = Fluent.GUI
+if Fluent.GUI then
+    Fluent.GUI.DisplayOrder = 1000002
+end
 
 local Tabs = {
     Main = Window:AddTab({ Title = "Auto Farm", Icon = "play" }),
@@ -882,19 +1107,36 @@ local function updateDropdownDisplay(newDisplayMap)
 end
 
 Tabs.Eggs:AddButton({
-    Title = "Select 100B+ Luck Only",
-    Description = "Filter Cherub, Blackhole, and God-tier eggs",
+    Title = "Select 300B+ (God-Tier Only)",
+    Description = "Filter Cherub Egg [1T] & Solaris Egg [300B]",
     Callback = function()
         local newMap = {}
         for _, disp in ipairs(displayList) do
             local r = DisplayToReal[disp]
             local luck = r and RealEggDatabase[r] and RealEggDatabase[r].Luck or 0
-            if luck >= 100000000000 then
+            if luck >= 300000000000 then
                 newMap[disp] = true
             end
         end
         updateDropdownDisplay(newMap)
-        Fluent:Notify({ Title = "Filter Applied", Content = "Targeting 100B+ eggs", Duration = 2 })
+        Fluent:Notify({ Title = "Filter Applied", Content = "Targeting 300B+ (Cherub & Solaris)", Duration = 2 })
+    end
+})
+
+Tabs.Eggs:AddButton({
+    Title = "Select 1.5B+ Luck Only",
+    Description = "Filter Cherub, Solaris, Blackhole, Galaxy",
+    Callback = function()
+        local newMap = {}
+        for _, disp in ipairs(displayList) do
+            local r = DisplayToReal[disp]
+            local luck = r and RealEggDatabase[r] and RealEggDatabase[r].Luck or 0
+            if luck >= 1500000000 then
+                newMap[disp] = true
+            end
+        end
+        updateDropdownDisplay(newMap)
+        Fluent:Notify({ Title = "Filter Applied", Content = "Targeting 1.5B+ eggs", Duration = 2 })
     end
 })
 
@@ -1004,24 +1246,58 @@ FpsSlider:OnChanged(function(Value)
     saveConfig()
 end)
 
-local Render3dToggle = Tabs.Settings:AddToggle("Render3dToggle", {
-    Title = "Disable 3D Rendering (Black Screen)",
-    Description = "Turn off 3D world render to save maximum GPU/battery",
-    Default = is3dDisabled
+local Disable3DToggle = Tabs.Settings:AddToggle("Disable3DToggle", {
+    Title = "Disable 3D Rendering",
+    Description = "Turn off Roblox 3D engine rendering (saves GPU/battery while keeping 2D UI & farming intact)",
+    Default = disable3dActive
 })
 
-Render3dToggle:OnChanged(function()
-    is3dDisabled = Fluent.Options.Render3dToggle.Value
-    if RunService.Set3dRenderingEnabled then
-        pcall(RunService.Set3dRenderingEnabled, RunService, not is3dDisabled)
-    end
+Disable3DToggle:OnChanged(function()
+    disable3dActive = Fluent.Options.Disable3DToggle.Value
+    setDisable3D(disable3dActive)
     saveConfig()
     Fluent:Notify({
         Title = "Performance",
-        Content = is3dDisabled and "3D Rendering Disabled" or "3D Rendering Enabled",
+        Content = disable3dActive and "3D Rendering Disabled (AFK Mode)" or "3D Rendering Enabled",
         Duration = 2
     })
 end)
+
+local PurgeToggle = Tabs.Settings:AddToggle("PurgePopupsToggle", {
+    Title = "Auto Purge In-Game Popups & Particles",
+    Description = "Clean floating numbers and debris to stop game RAM leaks",
+    Default = autoPurgePopups
+})
+
+PurgeToggle:OnChanged(function()
+    autoPurgePopups = Fluent.Options.PurgePopupsToggle.Value
+    saveConfig()
+end)
+
+Tabs.Settings:AddButton({
+    Title = "Activate Ultimate AFK Mode (Lowest RAM)",
+    Description = "Disable 3D Rendering + Cap 15 FPS + Purge popups",
+    Callback = function()
+        disable3dActive = true
+        if Fluent.Options.Disable3DToggle then
+            Fluent.Options.Disable3DToggle:SetValue(true)
+        else
+            setDisable3D(true)
+        end
+        currentFpsCap = 15
+        if Fluent.Options.FpsSlider then
+            Fluent.Options.FpsSlider:SetValue(15)
+        end
+        if setfpscap then pcall(setfpscap, 15) end
+        autoPurgePopups = true
+        if Fluent.Options.PurgePopupsToggle then
+            Fluent.Options.PurgePopupsToggle:SetValue(true)
+        end
+        purgePopupsAndEffects()
+        saveConfig()
+        Fluent:Notify({ Title = "Ultimate AFK Activated", Content = "Disable 3D | 15 FPS | Pure Performance", Duration = 3 })
+    end
+})
 
 local targetGuiParent = (gethui and gethui()) or CoreGui:FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
 
@@ -1029,6 +1305,7 @@ local WidgetGui = Instance.new("ScreenGui")
 WidgetGui.Name = "AetherMobileWidget"
 WidgetGui.ResetOnSpawn = false
 WidgetGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+WidgetGui.DisplayOrder = 1000000
 WidgetGui.Parent = targetGuiParent
 
 local WidgetBtn = Instance.new("TextButton")
@@ -1057,25 +1334,24 @@ WidgetBtn.InputBegan:Connect(function(input)
         isDragging = true
         dragStartPos = input.Position
         btnStartPos = WidgetBtn.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                isDragging = false
-            end
-        end)
+    end
+end)
+
+WidgetBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = false
     end
 end)
 
 WidgetBtn.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        if isDragging then
-            local delta = input.Position - dragStartPos
-            WidgetBtn.Position = UDim2.new(
-                btnStartPos.X.Scale,
-                btnStartPos.X.Offset + delta.X,
-                btnStartPos.Y.Scale,
-                btnStartPos.Y.Offset + delta.Y
-            )
-        end
+    if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and isDragging then
+        local delta = input.Position - dragStartPos
+        WidgetBtn.Position = UDim2.new(
+            btnStartPos.X.Scale,
+            btnStartPos.X.Offset + delta.X,
+            btnStartPos.Y.Scale,
+            btnStartPos.Y.Offset + delta.Y
+        )
     end
 end)
 
@@ -1088,7 +1364,7 @@ WidgetBtn.MouseButton1Click:Connect(function()
 end)
 
 Fluent:Notify({
-    Title = "Ride Ur MoM",
-    Content = "By. Diablo • Ready",
+    Title = "Ride Ur MoM v2.4",
+    Content = "By. Diablo • Ready | ⚡ Pure Disable 3D Rendering!",
     Duration = 3
 })
