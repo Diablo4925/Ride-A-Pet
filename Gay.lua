@@ -79,12 +79,9 @@ local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/
 local Remotes = ReplicatedStorage:WaitForChild("Remotes", 5)
 local GameRemotes = Remotes and Remotes:FindFirstChild("Game")
 local EggPickupRemote = GameRemotes and GameRemotes:FindFirstChild("EggPickup")
+local TeleportToPlotRemote = GameRemotes and GameRemotes:FindFirstChild("TeleportToPlot")
 
-local VOID_FALL_HEIGHT = -650
-local DROP_TIME = 0.2
-local WARP_WAIT = 0.75
 local PICKUP_DURATION = 2.0
-local HOLD_EGG_DELAY = 0.8
 
 local currentTween = nil
 local trackedBillboards = _G.RideUrMoM_Billboards
@@ -691,20 +688,95 @@ pcall(function()
     end)
 end)
 
-local function fastVoidDrop()
+local function getHomeCFrame()
+    local plots = Workspace:FindFirstChild("Plots")
+    if plots then
+        for _, p in ipairs(plots:GetChildren()) do
+            local owner = p:GetAttribute("NestsOwnerLoaded") or p:GetAttribute("OwnerUserId") or p:GetAttribute("Owner")
+            if tostring(owner) == tostring(LocalPlayer.UserId) then
+                local baseplate = p:FindFirstChild("Baseplate")
+                if baseplate then
+                    return CFrame.new(baseplate.Position + Vector3.new(0, 3.5, 0))
+                end
+                local cf, sz = p:GetBoundingBox()
+                return CFrame.new(cf.Position + Vector3.new(0, 5, 0))
+            end
+        end
+    end
+    return nil
+end
+
+local function getFallbackHomeCFrame()
+    -- ลองหา SpawnLocation ใน Workspace
+    local spawn = Workspace:FindFirstChildWhichIsA("SpawnLocation", true)
+    if spawn then
+        return CFrame.new(spawn.Position + Vector3.new(0, 3, 0))
+    end
+    -- ลองหา Plot ของ player แบบ attribute อื่น
+    local plots = Workspace:FindFirstChild("Plots") or Workspace:FindFirstChild("Plot")
+    if plots then
+        for _, p in ipairs(plots:GetDescendants()) do
+            local owner = p:GetAttribute("OwnerId") or p:GetAttribute("UserId") or p:GetAttribute("PlayerUserId")
+            if tostring(owner) == tostring(LocalPlayer.UserId) then
+                local cf, sz = pcall(function() return p:GetBoundingBox() end)
+                if cf and typeof(cf) == "CFrame" then
+                    return CFrame.new(cf.Position + Vector3.new(0, 5, 0))
+                end
+            end
+        end
+    end
+    -- Fallback: ตำแหน่งปัจจุบัน (ไม่ไปไหน)
+    local char = LocalPlayer.Character
+    local hrp2 = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp2 then
+        return hrp2.CFrame
+    end
+    return nil
+end
+
+local function tweenToHome()
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
 
-    local voidTarget = CFrame.new(hrp.Position.X, VOID_FALL_HEIGHT, hrp.Position.Z)
-    local tweenInfo = TweenInfo.new(DROP_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    -- หา target CFrame (plot บ้าน)
+    local targetCF = getHomeCFrame()
+
+    -- ถ้าหา home plot ไม่เจอ ให้ tween ไป fallback แทน (ไม่ void)
+    if not targetCF then
+        targetCF = getFallbackHomeCFrame()
+        -- ถ้า fallback เป็น CFrame ปัจจุบัน (ไม่มีที่ไป) ให้ notify และออก
+        if not targetCF then
+            return false
+        end
+    end
+
+    local dist = (hrp.Position - targetCF.Position).Magnitude
+
+    -- ถ้าอยู่ใกล้บ้านแล้ว ไม่ต้อง tween
+    if dist < 5 then
+        -- แจ้ง server ว่า teleport to plot (optional, ไม่ void)
+        if TeleportToPlotRemote then
+            pcall(function() TeleportToPlotRemote:FireServer() end)
+        end
+        return true
+    end
+
+    local tweenTime = math.clamp(dist / 600, 0.3, 1.2)
+    local tweenInfo = TweenInfo.new(tweenTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
     if currentTween then
         currentTween:Cancel()
         pcall(function() currentTween:Destroy() end)
         currentTween = nil
     end
-    currentTween = TweenService:Create(hrp, tweenInfo, {CFrame = voidTarget})
+
+    -- Anchor ชั่วคราวให้ tween ไม่ถูก physics รบกวน
+    hrp.Anchored = true
+    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+
+    currentTween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCF})
     currentTween:Play()
 
     local completed = false
@@ -713,7 +785,7 @@ local function fastVoidDrop()
         completed = true
     end)
 
-    local timeout = tick() + DROP_TIME + 0.4
+    local timeout = tick() + tweenTime + 0.5
     while not completed and tick() < timeout do
         task.wait(0.02)
     end
@@ -725,12 +797,20 @@ local function fastVoidDrop()
         currentTween = nil
     end
 
+    -- Snap ตำแหน่งสุดท้ายให้แม่นยำ แล้ว unanchor
     if hrp and hrp.Parent then
+        hrp.CFrame = targetCF
         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        hrp.Anchored = false
     end
 
-    task.wait(WARP_WAIT)
+    -- แจ้ง server ว่า teleport to plot (ไม่ void เพราะ character ยังมีชีวิต)
+    if TeleportToPlotRemote then
+        pcall(function() TeleportToPlotRemote:FireServer() end)
+    end
+
+    task.wait(0.2)
     return true
 end
 
@@ -962,8 +1042,7 @@ task.spawn(function()
                         scanFailTime = 0
                         local collected = spamEggPickup(bestEgg, bestPart, PICKUP_DURATION)
                         if collected then
-                            task.wait(HOLD_EGG_DELAY)
-                            fastVoidDrop()
+                            tweenToHome()
                         end
                     else
                         if AutoHopEnabled and not isHopping then
@@ -1038,7 +1117,7 @@ local Tabs = {
 
 Tabs.Main:AddParagraph({
     Title = "Ride Ur MoM • Harvester",
-    Content = "Instant void fall return (-650 Y). Prioritizes Highest Luck & Biggest Size."
+    Content = "Instant tween home return. Prioritizes Highest Luck & Biggest Size."
 })
 
 local FarmToggle = Tabs.Main:AddToggle("AutoFarmToggle", {
@@ -1364,7 +1443,7 @@ WidgetBtn.MouseButton1Click:Connect(function()
 end)
 
 Fluent:Notify({
-    Title = "Ride Ur MoM v2.4",
-    Content = "By. Diablo • Ready | ⚡ Pure Disable 3D Rendering!",
+    Title = "Ride Ur MoM v2.5",
+    Content = "By. Diablo • Ready | ⚡ Instant Tween Home Return!",
     Duration = 3
 })
