@@ -87,35 +87,38 @@ local currentTween = nil
 local trackedBillboards = _G.RideUrMoM_Billboards
 
 local RealEggDatabase = {
-    ["Admin Egg"]        = {Luck = 999999999999, Color = Color3.fromRGB(255, 240, 70),  Tag = "ADMIN"},
-    ["Devil Fruit Egg"]  = {Luck = 999999999999, Color = Color3.fromRGB(255, 65, 85),   Tag = "SECRET"},
-    ["Dragon Egg"]       = {Luck = 500000000000, Color = Color3.fromRGB(255, 75, 75),   Tag = "PREM"},
-    ["Giant Egg"]        = {Luck = 500000000000, Color = Color3.fromRGB(255, 160, 50),  Tag = "PREM"},
+    ["Volcanic Egg"]     = {Luck = 2500000000000, Color = Color3.fromRGB(255, 60, 20),   Tag = "2.5T"},
     ["Cherub Egg"]       = {Luck = 1000000000000, Color = Color3.fromRGB(244, 180, 255), Tag = "1T"},
+    ["Dragon Egg"]       = {Luck = 500000000000,  Color = Color3.fromRGB(255, 75, 75),   Tag = "PREM"},
+    ["Giant Egg"]        = {Luck = 500000000000,  Color = Color3.fromRGB(255, 160, 50),  Tag = "PREM"},
     ["Solaris Egg"]      = {Luck = 300000000000,  Color = Color3.fromRGB(255, 130, 30),  Tag = "300B"},
     ["Blackhole Egg"]    = {Luck = 100000000000,  Color = Color3.fromRGB(186, 104, 255), Tag = "100B"},
+    ["Bloom Egg"]        = {Luck = 2000000000,    Color = Color3.fromRGB(255, 105, 180), Tag = "2B"},
     ["Galaxy Egg"]       = {Luck = 1500000000,    Color = Color3.fromRGB(255, 120, 220), Tag = "1.5B"},
     ["Aurora Egg"]       = {Luck = 300000000,     Color = Color3.fromRGB(80, 250, 210),  Tag = "300M"},
-    ["Soul Egg"]         = {Luck = 7000000,  Color = Color3.fromRGB(60, 230, 160),  Tag = "7M"},
-    ["Sinister Egg"]     = {Luck = 3000000,  Color = Color3.fromRGB(255, 75, 75),   Tag = "3M"},
-    ["Flaming Egg"]      = {Luck = 1000000,  Color = Color3.fromRGB(255, 130, 60),  Tag = "1M"},
-    ["Dominus Egg"]      = {Luck = 700000,   Color = Color3.fromRGB(255, 80, 90),   Tag = "700K"},
-    ["Asteroid Egg"]     = {Luck = 500000,   Color = Color3.fromRGB(255, 175, 60),  Tag = "500K"},
-    ["Skull Egg"]        = {Luck = 250000,   Color = Color3.fromRGB(200, 205, 215), Tag = "250K"},
-    ["Crystal Egg"]      = {Luck = 150000,   Color = Color3.fromRGB(200, 130, 255), Tag = "150K"},
-    ["Diamond Egg"]      = {Luck = 90000,    Color = Color3.fromRGB(70, 210, 255),  Tag = "90K"},
-    ["Golden Egg"]       = {Luck = 30000,    Color = Color3.fromRGB(255, 210, 70),  Tag = "30K"},
-    ["Glass Egg"]        = {Luck = 10000, Color = Color3.fromRGB(210, 235, 255), Tag = "10K"},
-    ["Ice Egg"]          = {Luck = 3000,  Color = Color3.fromRGB(130, 210, 255), Tag = "3K"},
-    ["Slime Egg"]        = {Luck = 1000,  Color = Color3.fromRGB(90, 240, 140),  Tag = "1K"},
-    ["Flower Egg"]       = {Luck = 750,   Color = Color3.fromRGB(255, 170, 205), Tag = "750"},
-    ["Mushroom Egg"]     = {Luck = 500,   Color = Color3.fromRGB(255, 140, 140), Tag = "500"},
-    ["Leaf Egg"]         = {Luck = 200,   Color = Color3.fromRGB(100, 220, 80),  Tag = "200"},
-    ["Stone Egg"]        = {Luck = 100, Color = Color3.fromRGB(160, 160, 160), Tag = "100"},
-    ["Easter Egg"]       = {Luck = 50,  Color = Color3.fromRGB(255, 200, 240), Tag = "50"},
-    ["Cracked Egg"]      = {Luck = 30,  Color = Color3.fromRGB(200, 185, 150), Tag = "30"},
-    ["Brown Egg"]        = {Luck = 5,   Color = Color3.fromRGB(180, 120, 60),  Tag = "5"},
-    ["White Egg"]        = {Luck = 1,   Color = Color3.fromRGB(240, 240, 245), Tag = "1"},
+    ["Tidal Egg"]        = {Luck = 8000000,       Color = Color3.fromRGB(0, 180, 255),   Tag = "8M"},
+    ["Soul Egg"]         = {Luck = 7000000,       Color = Color3.fromRGB(60, 230, 160),  Tag = "7M"},
+    ["Sinister Egg"]     = {Luck = 3000000,       Color = Color3.fromRGB(255, 75, 75),   Tag = "3M"},
+    ["Flaming Egg"]      = {Luck = 1000000,       Color = Color3.fromRGB(255, 130, 60),  Tag = "1M"},
+    ["Dominus Egg"]      = {Luck = 700000,        Color = Color3.fromRGB(255, 80, 90),   Tag = "700K"},
+    ["Asteroid Egg"]     = {Luck = 500000,        Color = Color3.fromRGB(255, 175, 60),  Tag = "500K"},
+    ["Skull Egg"]        = {Luck = 250000,        Color = Color3.fromRGB(200, 205, 215), Tag = "250K"},
+    ["Crystal Egg"]      = {Luck = 150000,        Color = Color3.fromRGB(200, 130, 255), Tag = "150K"},
+    ["Diamond Egg"]      = {Luck = 90000,         Color = Color3.fromRGB(70, 210, 255),  Tag = "90K"},
+    ["Golden Egg"]       = {Luck = 30000,         Color = Color3.fromRGB(255, 210, 70),  Tag = "30K"},
+    ["Glass Egg"]        = {Luck = 10000,         Color = Color3.fromRGB(210, 235, 255), Tag = "10K"},
+    ["Ice Egg"]          = {Luck = 3000,          Color = Color3.fromRGB(130, 210, 255), Tag = "3K"},
+    ["Slime Egg"]        = {Luck = 1000,          Color = Color3.fromRGB(90, 240, 140),  Tag = "1K"},
+    ["Flower Egg"]       = {Luck = 750,           Color = Color3.fromRGB(255, 170, 205), Tag = "750"},
+    ["Mushroom Egg"]     = {Luck = 500,           Color = Color3.fromRGB(255, 140, 140), Tag = "500"},
+    ["Leaf Egg"]         = {Luck = 200,           Color = Color3.fromRGB(100, 220, 80),  Tag = "200"},
+    ["Stone Egg"]        = {Luck = 100,           Color = Color3.fromRGB(160, 160, 160), Tag = "100"},
+    ["Easter Egg"]       = {Luck = 50,            Color = Color3.fromRGB(255, 200, 240), Tag = "50"},
+    ["Cracked Egg"]      = {Luck = 30,            Color = Color3.fromRGB(200, 185, 150), Tag = "30"},
+    ["Brown Egg"]        = {Luck = 5,             Color = Color3.fromRGB(180, 120, 60),  Tag = "5"},
+    ["White Egg"]        = {Luck = 1,             Color = Color3.fromRGB(240, 240, 245), Tag = "1"},
+    ["Admin Egg"]        = {Luck = 999999999999,  Color = Color3.fromRGB(255, 240, 70),  Tag = "ADMIN"},
+    ["Devil Fruit Egg"]  = {Luck = 999999999999,  Color = Color3.fromRGB(255, 65, 85),   Tag = "SECRET"},
 }
 
 local DisplayToReal = {}
@@ -136,21 +139,24 @@ table.sort(displayList, function(a, b)
 end)
 
 local SelectedEggs = {
+    ["Volcanic Egg"]    = true,
     ["Cherub Egg"]      = true,
-    ["Blackhole Egg"]   = true,
-    ["Solaris Egg"]     = true,
-    ["Galaxy Egg"]      = true,
-    ["Aurora Egg"]      = true,
-    ["Soul Egg"]        = true,
-    ["Sinister Egg"]    = true,
-    ["Dominus Egg"]     = true,
-    ["Skull Egg"]       = true,
-    ["Diamond Egg"]     = true,
-    ["Crystal Egg"]     = true,
     ["Dragon Egg"]      = true,
     ["Giant Egg"]       = true,
-    ["Devil Fruit Egg"] = true,
-    ["Admin Egg"]       = true
+    ["Solaris Egg"]     = true,
+    ["Blackhole Egg"]   = true,
+    ["Bloom Egg"]       = true,
+    ["Galaxy Egg"]      = true,
+    ["Aurora Egg"]      = true,
+    ["Tidal Egg"]       = true,
+    ["Soul Egg"]        = true,
+    ["Sinister Egg"]    = true,
+    ["Flaming Egg"]     = true,
+    ["Dominus Egg"]     = true,
+    ["Asteroid Egg"]    = true,
+    ["Skull Egg"]       = true,
+    ["Crystal Egg"]     = true,
+    ["Diamond Egg"]     = true,
 }
 
 local function setDisable3D(enable)
@@ -356,11 +362,11 @@ local function isWildEgg(obj)
     if renderedEggsFolder and obj.Parent ~= renderedEggsFolder then
         return false
     end
-    local prompt = getEggPrompt(obj)
-    return prompt ~= nil and prompt.Enabled
+    return RealEggDatabase[obj.Name] ~= nil
 end
 
 local function getBestPart(obj)
+    if not obj or not obj.Parent then return nil end
     local cached = eggPartCache[obj]
     if cached and cached.Parent then
         return cached
@@ -380,6 +386,7 @@ local function getBestPart(obj)
         or obj:FindFirstChild("Handle")
         or obj:FindFirstChild("EggBase")
         or obj:FindFirstChildWhichIsA("BasePart")
+        or obj:FindFirstChildWhichIsA("BasePart", true)
 
     if part then
         eggPartCache[obj] = part
@@ -424,55 +431,23 @@ local function getEggSize(obj)
     return 1
 end
 
-local activeWildEggs = {}
+local function getRenderedEggsFolder()
+    if not renderedEggsFolder or not renderedEggsFolder.Parent then
+        renderedEggsFolder = Workspace:FindFirstChild("RenderedEggs")
+    end
+    return renderedEggsFolder
+end
+
 local candidateListCache = {}
-
-local function registerEgg(egg)
-    if isWildEgg(egg) then
-        activeWildEggs[egg] = true
-    end
-end
-
-local function unregisterEgg(egg)
-    activeWildEggs[egg] = nil
-    eggPromptCache[egg] = nil
-    eggPartCache[egg] = nil
-    eggSizeCache[egg] = nil
-end
-
-local function initEggTracking()
-    table.clear(activeWildEggs)
-    renderedEggsFolder = Workspace:FindFirstChild("RenderedEggs")
-    if not renderedEggsFolder then return end
-
-    for _, egg in ipairs(renderedEggsFolder:GetChildren()) do
-        registerEgg(egg)
-    end
-
-    trackConnection(renderedEggsFolder.ChildAdded:Connect(function(egg)
-        task.wait(0.1)
-        registerEgg(egg)
-    end))
-
-    trackConnection(renderedEggsFolder.ChildRemoved:Connect(function(egg)
-        unregisterEgg(egg)
-    end))
-end
-
-initEggTracking()
 
 local function getCandidateEggs()
     table.clear(candidateListCache)
-    if not renderedEggsFolder or not renderedEggsFolder.Parent then
-        initEggTracking()
-        if not renderedEggsFolder then return candidateListCache end
-    end
+    local folder = getRenderedEggsFolder()
+    if not folder then return candidateListCache end
 
-    for egg in pairs(activeWildEggs) do
-        if egg.Parent == renderedEggsFolder then
+    for _, egg in ipairs(folder:GetChildren()) do
+        if egg and egg.Parent == folder and RealEggDatabase[egg.Name] then
             table.insert(candidateListCache, egg)
-        else
-            unregisterEgg(egg)
         end
     end
     return candidateListCache
@@ -706,12 +681,20 @@ local function getHomeCFrame()
     return nil
 end
 
+local function getFallbackHomeCFrame()
+    local spawn = Workspace:FindFirstChildWhichIsA("SpawnLocation", true)
+    if spawn then
+        return CFrame.new(spawn.Position + Vector3.new(0, 3.5, 0))
+    end
+    return nil
+end
+
 local function tweenToHome()
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
 
-    local targetCF = getHomeCFrame()
+    local targetCF = getHomeCFrame() or getFallbackHomeCFrame()
     if not targetCF then
         if TeleportToPlotRemote then
             pcall(function() TeleportToPlotRemote:FireServer() end)
@@ -729,6 +712,10 @@ local function tweenToHome()
         currentTween = nil
     end
 
+    hrp.Anchored = true
+    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+
     currentTween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCF})
     currentTween:Play()
 
@@ -738,7 +725,7 @@ local function tweenToHome()
         completed = true
     end)
 
-    local timeout = tick() + tweenTime + 0.3
+    local timeout = tick() + tweenTime + 0.4
     while not completed and tick() < timeout do
         task.wait(0.02)
     end
@@ -754,6 +741,7 @@ local function tweenToHome()
         hrp.CFrame = targetCF
         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        hrp.Anchored = false
     end
 
     if TeleportToPlotRemote then
@@ -793,7 +781,8 @@ local function spamEggPickup(targetObj, targetPart, duration)
     local pickedUp = false
 
     while tick() < endTime do
-        if not targetObj.Parent or (renderedEggsFolder and targetObj.Parent ~= renderedEggsFolder) then
+        local curFolder = getRenderedEggsFolder()
+        if not targetObj.Parent or (curFolder and targetObj.Parent ~= curFolder) then
             pickedUp = true
             break
         end
@@ -841,7 +830,8 @@ local function spamEggPickup(targetObj, targetPart, duration)
         end)
     end
 
-    if not targetObj.Parent or (renderedEggsFolder and targetObj.Parent ~= renderedEggsFolder) then
+    local curFolder = getRenderedEggsFolder()
+    if not targetObj.Parent or (curFolder and targetObj.Parent ~= curFolder) then
         pickedUp = true
     end
 
@@ -1137,7 +1127,7 @@ end
 
 Tabs.Eggs:AddButton({
     Title = "Select 300B+ (God-Tier Only)",
-    Description = "Filter Cherub Egg [1T] & Solaris Egg [300B]",
+    Description = "Filter Volcanic [2.5T], Cherub [1T] & Solaris [300B]",
     Callback = function()
         local newMap = {}
         for _, disp in ipairs(displayList) do
@@ -1148,13 +1138,13 @@ Tabs.Eggs:AddButton({
             end
         end
         updateDropdownDisplay(newMap)
-        Fluent:Notify({ Title = "Filter Applied", Content = "Targeting 300B+ (Cherub & Solaris)", Duration = 2 })
+        Fluent:Notify({ Title = "Filter Applied", Content = "Targeting 300B+ (Volcanic, Cherub, Solaris)", Duration = 2 })
     end
 })
 
 Tabs.Eggs:AddButton({
     Title = "Select 1.5B+ Luck Only",
-    Description = "Filter Cherub, Solaris, Blackhole, Galaxy",
+    Description = "Filter Volcanic, Cherub, Solaris, Blackhole, Bloom, Galaxy",
     Callback = function()
         local newMap = {}
         for _, disp in ipairs(displayList) do
@@ -1165,7 +1155,41 @@ Tabs.Eggs:AddButton({
             end
         end
         updateDropdownDisplay(newMap)
-        Fluent:Notify({ Title = "Filter Applied", Content = "Targeting 1.5B+ eggs", Duration = 2 })
+        Fluent:Notify({ Title = "Filter Applied", Content = "Targeting 1.5B+ eggs (Volcanic, Bloom+)", Duration = 2 })
+    end
+})
+
+Tabs.Eggs:AddButton({
+    Title = "Select 7M+ Luck (Recommended)",
+    Description = "Tidal, Soul, Aurora, Galaxy, Bloom, Blackhole, Solaris, Cherub, Volcanic",
+    Callback = function()
+        local newMap = {}
+        for _, disp in ipairs(displayList) do
+            local r = DisplayToReal[disp]
+            local luck = r and RealEggDatabase[r] and RealEggDatabase[r].Luck or 0
+            if luck >= 7000000 then
+                newMap[disp] = true
+            end
+        end
+        updateDropdownDisplay(newMap)
+        Fluent:Notify({ Title = "Filter Applied", Content = "Targeting 7M+ eggs (Tidal, Soul+)", Duration = 2 })
+    end
+})
+
+Tabs.Eggs:AddButton({
+    Title = "Select 250K+ Luck",
+    Description = "Skull, Crystal, Diamond, Dominus, Asteroid, Sinister, Soul+",
+    Callback = function()
+        local newMap = {}
+        for _, disp in ipairs(displayList) do
+            local r = DisplayToReal[disp]
+            local luck = r and RealEggDatabase[r] and RealEggDatabase[r].Luck or 0
+            if luck >= 250000 then
+                newMap[disp] = true
+            end
+        end
+        updateDropdownDisplay(newMap)
+        Fluent:Notify({ Title = "Filter Applied", Content = "Targeting 250K+ eggs", Duration = 2 })
     end
 })
 
