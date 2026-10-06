@@ -73,6 +73,7 @@ local isHopping = false
 local currentFpsCap = 30
 local disable3dActive = false
 local autoPurgePopups = true
+local returnTweenSpeed = 200 -- 200 studs/sec (reduced 3x from 600)
 
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
@@ -177,6 +178,7 @@ local function saveConfig()
             Fps = currentFpsCap,
             Disable3D = disable3dActive,
             AutoPurge = autoPurgePopups,
+            ReturnSpeed = returnTweenSpeed,
             Selected = SelectedEggs
         }
         writefile(CONFIG_FILE, HttpService:JSONEncode(data))
@@ -200,6 +202,7 @@ local function loadConfig()
                 disable3dActive = data.SafeBlackScreen
             end
             if data.AutoPurge ~= nil then autoPurgePopups = data.AutoPurge end
+            if data.ReturnSpeed ~= nil then returnTweenSpeed = data.ReturnSpeed end
             if data.Selected and type(data.Selected) == "table" then
                 SelectedEggs = data.Selected
             end
@@ -689,11 +692,106 @@ local function getFallbackHomeCFrame()
     return nil
 end
 
+-- \u0e40\u0e0a\u0e47\u0e01\u0e27\u0e48\u0e32 character \u0e01\u0e33\u0e25\u0e31\u0e07\u0e1e\u0e01\u0e44\u0e02\u0e48\u0e2d\u0e22\u0e39\u0e48\u0e44\u0e2b\u0e21 (\u0e14\u0e39\u0e08\u0e32\u0e01 Wooden basket transparency)
+-- flag ตั้งโดย farm loop เอง (ไม่เดาจาก transparency ที่ไม่น่าเชื่อถือ)
+local _carrying = false
+local function isCarryingEgg()
+    return _carrying == true
+end
+
 local function tweenToHome()
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
 
+    -- รอ 3 วินาทีก่อนเริ่มกลับบ้าน
+    task.wait(3)
+
+    char = LocalPlayer.Character
+    hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    -- ถ้ากำลัง carry egg → ต้องเดิน/บินกลับบ้านจริงๆ ด้วย BodyVelocity
+    -- เพราะ TeleportToPlot และ CFrame จะถูก server block ทันที
+    if isCarryingEgg() then
+        local targetCF = getHomeCFrame() or getFallbackHomeCFrame()
+        if not targetCF then return false end
+
+        local homePos = targetCF.Position
+
+        -- ดึง / สร้าง BodyVelocity
+        local bv = hrp:FindFirstChild("EggFloatVelocity")
+        if not bv then
+            bv = Instance.new("BodyVelocity")
+            bv.Name = "EggFloatVelocity"
+            bv.Parent = hrp
+        end
+
+        hrp.Anchored = false
+        local moveSpeed = math.max(returnTweenSpeed or 200, 200)
+        local deadline = tick() + 22
+
+        while tick() < deadline do
+            char = LocalPlayer.Character
+            hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp or not hrp.Parent then break end
+
+            if not isCarryingEgg() then break end
+
+            local currentPos = hrp.Position
+            local dist = (currentPos - homePos).Magnitude
+
+            -- หยุดเมื่อถึงระยะใกล้พอ
+            if dist < 15 then break end
+
+            local dir = (homePos - currentPos).Unit
+
+            -- ลดความเร็วตามระยะ (proportional deceleration)
+            -- - ไกล: วิ่งเต็ม moveSpeed
+            -- - ใกล้บ้าน 200 studs: เริ่มเบรก
+            -- - min 80 studs/s เพื่อไม่สะดุด
+            local slowZone = 200
+            local cappedSpeed = dist < slowZone
+                and math.max((dist / slowZone) * moveSpeed, 80)
+                or moveSpeed
+
+            bv.Velocity = dir * cappedSpeed
+            bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+
+            task.wait(0.05)
+        end
+
+        -- หยุด velocity สนิท
+        if bv and bv.Parent then
+            bv.Velocity = Vector3.new(0, 0, 0)
+            bv.MaxForce = Vector3.new(0, 0, 0)
+        end
+
+        -- Snap แข็งๆ ไปยังตำแหน่งบ้านพอดี (ไม่กระเด็น)
+        task.wait(0.05)
+        char = LocalPlayer.Character
+        hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp and hrp.Parent then
+            hrp.Anchored = true
+            hrp.CFrame = targetCF
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            task.wait(0.1)
+            hrp.Anchored = false
+        end
+
+        -- รอ server ประมวลผล delivery
+        task.wait(0.6)
+
+        if TeleportToPlotRemote then
+            pcall(function() TeleportToPlotRemote:FireServer() end)
+        end
+
+        task.wait(0.3)
+        return true
+    end
+
+    -- ไม่ได้ carry egg → client tween ปกติ
     local targetCF = getHomeCFrame() or getFallbackHomeCFrame()
     if not targetCF then
         if TeleportToPlotRemote then
@@ -703,7 +801,9 @@ local function tweenToHome()
     end
 
     local dist = (hrp.Position - targetCF.Position).Magnitude
-    local tweenTime = math.clamp(dist / 600, 0.25, 0.8)
+    local speed = returnTweenSpeed or 200
+    if speed <= 0 then speed = 200 end
+    local tweenTime = math.clamp(dist / speed, 0.5, 6.0)
     local tweenInfo = TweenInfo.new(tweenTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
     if currentTween then
@@ -725,7 +825,7 @@ local function tweenToHome()
         completed = true
     end)
 
-    local timeout = tick() + tweenTime + 0.4
+    local timeout = tick() + tweenTime + 0.5
     while not completed and tick() < timeout do
         task.wait(0.02)
     end
@@ -744,6 +844,46 @@ local function tweenToHome()
         hrp.Anchored = false
     end
 
+    if TeleportToPlotRemote then
+        pcall(function() TeleportToPlotRemote:FireServer() end)
+    end
+
+    task.wait(0.2)
+    return true
+end
+
+-- ⚡ Instant TP mode — snap ไปบ้านทันทีไม่มีฟิสิก
+local AutoFarmInstant = false
+
+local function instantToHome()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local targetCF = getHomeCFrame() or getFallbackHomeCFrame()
+    if not targetCF then
+        if TeleportToPlotRemote then
+            pcall(function() TeleportToPlotRemote:FireServer() end)
+        end
+        return false
+    end
+
+    -- Snap แข็งๆ ไปบ้านทันที
+    hrp.Anchored = true
+    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    hrp.CFrame = targetCF
+    task.wait(0.05)
+    hrp.Anchored = false
+
+    -- รอให้ server ประมวลผล egg delivery ที่ plot
+    local deadline = tick() + 3
+    while isCarryingEgg() and tick() < deadline do
+        task.wait(0.1)
+    end
+
+    -- Fire TeleportToPlot หลัง basket ว่าง
+    task.wait(0.2)
     if TeleportToPlotRemote then
         pcall(function() TeleportToPlotRemote:FireServer() end)
     end
@@ -775,6 +915,50 @@ local function spamEggPickup(targetObj, targetPart, duration)
     hrp.Anchored = false
     hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+
+    -- ถ้า InVolcano ยังไม่ถูก validate → เข้าผ่านประตูจริงก่อน
+    -- วิธี: warp ด้านนอก → firetouchinterest begin → warp ผ่านไปด้านใน → end
+    -- เซิร์ฟจะตั้ง VolcanoValidated=true → prompt ไข่เปิดให้เก็บได้
+    local volcano = Workspace:FindFirstChild("Volcano")
+    local volcanoValidate = volcano and volcano:FindFirstChild("VolcanoValidate")
+    local volcanoTop = volcano and volcano:FindFirstChild("VolcanoTop")
+
+    -- เช็คว่าไข่อยู่ในพื้นที่ volcano ไหม (ใช้ VolcanoTop เป็น boundary)
+    local eggInVolcano = false
+    if volcanoTop and volcanoTop:IsA("BasePart") then
+        local tPos = volcanoTop.Position
+        local tSize = volcanoTop.Size
+        eggInVolcano = math.abs(targetPos.X - tPos.X) < tSize.X/2
+            and math.abs(targetPos.Z - tPos.Z) < tSize.Z/2
+    end
+
+    if eggInVolcano and volcanoValidate and volcanoValidate:IsA("BasePart") then
+        -- ตรวจว่า server รู้ว่าเราอยู่ใน volcano แล้วหรือยัง
+        local alreadyIn = LocalPlayer:GetAttribute("InVolcano") == true
+        if not alreadyIn then
+            local vCF = volcanoValidate.CFrame
+            -- 1. warp ไปด้านนอก validate
+            local outsidePos = (vCF * CFrame.new(0, 0, 5)).Position
+            local insidePos  = (vCF * CFrame.new(0, 0, -5)).Position
+            hrp.CFrame = CFrame.new(outsidePos)
+            task.wait(0.15)
+            -- 2. fire touch begin (เริ่มแตะ)
+            if firetouchinterest then
+                pcall(firetouchinterest, hrp, volcanoValidate, 0)
+            end
+            task.wait(0.05)
+            -- 3. warp ผ่านไปด้านใน (ลอดประตู)
+            hrp.CFrame = CFrame.new(insidePos)
+            task.wait(0.05)
+            -- 4. fire touch end
+            if firetouchinterest then
+                pcall(firetouchinterest, hrp, volcanoValidate, 1)
+            end
+            task.wait(0.3) -- รอ server ตั้ง VolcanoValidated=true
+        end
+    end
+
+
     hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 0.6, 0.2))
 
     local endTime = tick() + duration
@@ -982,7 +1166,13 @@ task.spawn(function()
                         scanFailTime = 0
                         local collected = spamEggPickup(bestEgg, bestPart, PICKUP_DURATION)
                         if collected then
-                            tweenToHome()
+                            _carrying = true
+                            if AutoFarmInstant then
+                                instantToHome()
+                            else
+                                tweenToHome()
+                            end
+                            _carrying = false
                         end
                     else
                         if AutoHopEnabled and not isHopping then
@@ -1078,6 +1268,123 @@ FarmToggle:OnChanged(function()
         Duration = 2.5
     })
 end)
+
+local InstantToggle = Tabs.Main:AddToggle("AutoFarmInstantToggle", {
+    Title = "⚡ Instant TP Home",
+    Description = "กลับบ้านแบบ Snap ทันที (ไม่มีฟิสิก) — เร็วสุด แต่อาจโดนคืนไข่ในบางเซิร์ฟ",
+    Default = AutoFarmInstant
+})
+
+InstantToggle:OnChanged(function()
+    AutoFarmInstant = Fluent.Options.AutoFarmInstantToggle.Value
+    Fluent:Notify({
+        Title = "⚡ Return Mode",
+        Content = AutoFarmInstant and "Instant TP (Snap)" or "BodyVelocity Fly (Physics)",
+        Duration = 2
+    })
+end)
+
+local ReturnSpeedSlider = Tabs.Main:AddSlider("ReturnSpeedSlider", {
+    Title = "Home Return Speed (studs/s)",
+    Description = "ค่ามาก = เร็ว | ค่าน้อย = ช้า | Min 200 ตอนพกไข่ (กันไข่แตก)",
+    Default = returnTweenSpeed,
+    Min = 50,
+    Max = 6000,
+    Rounding = 0
+})
+
+ReturnSpeedSlider:OnChanged(function(Value)
+    returnTweenSpeed = Value
+    saveConfig()
+end)
+
+-- กล่องพิมพ์ตัวเลขตรงๆ (ไม่ต้องลาก)
+Tabs.Main:AddInput("ReturnSpeedInput", {
+    Title = "⌨️ พิมพ์ Speed ตรงๆ",
+    Description = "กรอกตัวเลข studs/s แล้วกด Enter (50 – 6000)",
+    Default = tostring(returnTweenSpeed),
+    Numeric = true,
+    Finished = true,
+    Callback = function(Value)
+        local num = tonumber(Value)
+        if num and num >= 50 then
+            num = math.min(num, 6000)
+            returnTweenSpeed = num
+            ReturnSpeedSlider:SetValue(num)
+            saveConfig()
+            Fluent:Notify({
+                Title = "⚡ Speed ตั้งแล้ว",
+                Content = string.format("Return Speed = %d studs/s", num),
+                Duration = 2
+            })
+        end
+    end
+})
+
+Tabs.Main:AddButton({
+    Title = "🎯 วาปไปหาไข่โหดสุด",
+    Description = "Teleport ไปยังไข่ที่มี Luck สูงที่สุดใน Selected Eggs ตอนนี้",
+    Callback = function()
+        -- บล็อกถ้ากำลังพกไข่อยู่ (basket มีไข่ = server จะ reject teleport)
+        if isCarryingEgg() then
+            Fluent:Notify({
+                Title = "⚠️ กำลังพกไข่อยู่!",
+                Content = "รอส่งไข่ที่บ้านก่อนแล้วค่อยกดวาปใหม่",
+                Duration = 3
+            })
+            return
+        end
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            Fluent:Notify({ Title = "วาปล้มเหลว", Content = "ไม่เจอ Character", Duration = 2 })
+            return
+        end
+
+        local folder = getRenderedEggsFolder()
+        if not folder then
+            Fluent:Notify({ Title = "วาปล้มเหลว", Content = "ไม่มีไข่ใน Map", Duration = 2 })
+            return
+        end
+
+        local bestEgg, bestPart, bestLuck = nil, nil, -1
+        for _, egg in ipairs(folder:GetChildren()) do
+            if egg and egg.Parent == folder and RealEggDatabase[egg.Name] and SelectedEggs[egg.Name] then
+                local info = RealEggDatabase[egg.Name]
+                if info.Luck > bestLuck then
+                    local p = getBestPart(egg)
+                    if p and p.Parent then
+                        bestEgg = egg
+                        bestPart = p
+                        bestLuck = info.Luck
+                    end
+                end
+            end
+        end
+
+        if not bestEgg or not bestPart then
+            Fluent:Notify({ Title = "ไม่พบไข่", Content = "ไม่มีไข่ใน Selected Eggs ตอนนี้", Duration = 3 })
+            return
+        end
+
+        -- วาปไปหาไข่ (client-side CFrame ตรงๆ ไม่เรียก server teleport)
+        local targetPos = bestPart.Position + Vector3.new(0, 0.6, 0.2)
+        hrp.Anchored = true
+        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        hrp.CFrame = CFrame.new(targetPos)
+        task.wait(0.05)
+        hrp.Anchored = false
+
+        local info = RealEggDatabase[bestEgg.Name]
+        Fluent:Notify({
+            Title = "🎯 วาปสำเร็จ!",
+            Content = string.format("%s [%s] — Luck %s | กด Auto Farm เพื่อเก็บ", bestEgg.Name, info.Tag, info.Tag),
+            Duration = 3
+        })
+    end
+})
 
 Tabs.Eggs:AddParagraph({
     Title = "Egg Selection & Filters",
